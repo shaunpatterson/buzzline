@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Buzzline</h1>
+    </div>
+    <label class="switch" title="Toggle Buzzline">
+      <input type="checkbox" id="toggle">
+      <span class="slider"></span>
+    </label>
+  </header>
+  <section class="controls">
+    <label for="scheme">Color scheme</label>
+    <select id="scheme"></select>
+  </section>
+  <section class="preview-wrap">
+    <div id="preview" class="preview"></div>
+  </section>
+  <footer>
+    <p class="hint">Changes apply on page reload if coloring isn't visible right away.</p>
+  </footer>
+  <script src="popup.js"></script>
+</body>
+</html>

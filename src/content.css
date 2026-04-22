@@ -1,0 +1,7 @@
+/* Extension-declared CSS bypasses page CSP. The base rule always applies;
+   per-span color is set via the --bzln-c custom property. If the page CSP
+   blocks inline style attributes, color gracefully falls back to `inherit`
+   (the span keeps its original text color). */
+span[data-bzln] {
+  color: var(--bzln-c, inherit) !important;
+}
