@@ -33,6 +33,11 @@ The content script:
    and watches the DOM with a `MutationObserver` (childList + characterData)
    to handle dynamic content.
 
+Per-site opt-out: the popup shows the current hostname and a "Disable on
+this site" toggle. Hostnames you opt out of are stored in
+`chrome.storage.sync` under `disabledHosts` and are skipped even when the
+global switch is on.
+
 Colors are applied via a CSS custom property (`--bzln-c`) read by a rule in
 `content.css`. That rule carries `!important` so it overrides site CSS; the
 extension-declared stylesheet is not subject to page CSP.
@@ -80,7 +85,8 @@ scripts/gen_icons.py   Regenerates the icons (stdlib only)
 
 - No build step. Edit files, reload the extension in `chrome://extensions`,
   reload the page.
-- State lives in `chrome.storage.sync` under the keys `enabled` and `scheme`.
+- State lives in `chrome.storage.sync` under the keys `enabled`, `scheme`,
+  and `disabledHosts` (array of hostnames to skip).
 - To regenerate icons: `python3 scripts/gen_icons.py`.
 
 ## Caveat

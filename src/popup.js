@@ -9,6 +9,11 @@ const SCHEMES = {
 const toggle = document.getElementById('toggle');
 const schemeSelect = document.getElementById('scheme');
 const preview = document.getElementById('preview');
+const siteRow = document.getElementById('site-row');
+const siteHostEl = document.getElementById('site-host');
+const siteToggle = document.getElementById('site-toggle');
+
+let currentHost = null;
 
 for (const key of Object.keys(SCHEMES)) {
   const opt = document.createElement('option');
@@ -17,10 +22,11 @@ for (const key of Object.keys(SCHEMES)) {
   schemeSelect.appendChild(opt);
 }
 
-chrome.storage.sync.get(['enabled', 'scheme'], (s) => {
+chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts'], (s) => {
   toggle.checked = !!s.enabled;
   schemeSelect.value = SCHEMES[s.scheme] ? s.scheme : 'classic';
   renderPreview();
+  initSiteRow(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
 });
 
 toggle.addEventListener('change', () => {
@@ -29,6 +35,37 @@ toggle.addEventListener('change', () => {
 schemeSelect.addEventListener('change', () => {
   chrome.storage.sync.set({ scheme: schemeSelect.value });
   renderPreview();
+});
+
+function initSiteRow(disabledHosts) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || !tab.url) return;
+    let host = null;
+    try {
+      const u = new URL(tab.url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        host = u.hostname.toLowerCase();
+      }
+    } catch { /* not a URL we can parse */ }
+    if (!host) return; // chrome://, file://, etc. — leave row hidden
+    currentHost = host;
+    siteHostEl.textContent = host;
+    siteHostEl.title = host;
+    siteToggle.checked = disabledHosts.includes(host);
+    siteRow.hidden = false;
+  });
+}
+
+siteToggle.addEventListener('change', () => {
+  if (!currentHost) return;
+  chrome.storage.sync.get(['disabledHosts'], (s) => {
+    const list = Array.isArray(s.disabledHosts) ? s.disabledHosts.slice() : [];
+    const idx = list.indexOf(currentHost);
+    if (siteToggle.checked && idx === -1) list.push(currentHost);
+    else if (!siteToggle.checked && idx !== -1) list.splice(idx, 1);
+    chrome.storage.sync.set({ disabledHosts: list });
+  });
 });
 
 function mix(a, b, t) {

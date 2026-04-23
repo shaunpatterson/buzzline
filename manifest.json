@@ -3,7 +3,7 @@
   "name": "Buzzline",
   "version": "0.1.0",
   "description": "Eye-guiding color gradients that pull your eyes through long blocks of text.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
   "action": {
     "default_popup": "src/popup.html",
     "default_title": "Buzzline"

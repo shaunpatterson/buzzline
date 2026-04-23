@@ -72,7 +72,10 @@
     return false;
   };
 
-  const state = { enabled: false, scheme: 'classic' };
+  const state = { enabled: false, scheme: 'classic', disabledHosts: [] };
+  const currentHost = (location.hostname || '').toLowerCase();
+  const isHostDisabled = () =>
+    Array.isArray(state.disabledHosts) && state.disabledHosts.includes(currentHost);
   let mo = null;
   const pendingTimers = new Set();
   let applyTimer = null;
@@ -341,23 +344,33 @@
     unprocessAll();
   }
 
-  chrome.storage.sync.get(['enabled', 'scheme'], (res) => {
+  function applyEnabledState() {
+    const shouldRun = state.enabled && !isHostDisabled();
+    if (shouldRun && !mo) enable();
+    else if (!shouldRun && mo) disable();
+  }
+
+  chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts'], (res) => {
     state.enabled = !!res.enabled;
     state.scheme = res.scheme || 'classic';
-    if (state.enabled) enable();
+    state.disabledHosts = Array.isArray(res.disabledHosts) ? res.disabledHosts : [];
+    applyEnabledState();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     if ('scheme' in changes) {
       state.scheme = changes.scheme.newValue || 'classic';
-      if (state.enabled) applyColors();
+      if (mo) applyColors();
     }
     if ('enabled' in changes) {
-      const next = !!changes.enabled.newValue;
-      if (next === state.enabled) return;
-      state.enabled = next;
-      if (next) enable(); else disable();
+      state.enabled = !!changes.enabled.newValue;
+      applyEnabledState();
+    }
+    if ('disabledHosts' in changes) {
+      const next = changes.disabledHosts.newValue;
+      state.disabledHosts = Array.isArray(next) ? next : [];
+      applyEnabledState();
     }
   });
 })();

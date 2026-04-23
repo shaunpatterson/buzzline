@@ -61,6 +61,32 @@ select {
 }
 select:focus { border-color: var(--accent); }
 
+.site-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px 4px;
+}
+.site-label { display: flex; flex-direction: column; min-width: 0; }
+.site-caption {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.site-host {
+  font-size: 13px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 230px;
+}
+/* When the site toggle is ON, Buzzline is DISABLED on this site —
+   invert the visual so "on" = red/muted, matching user intent. */
+.switch-sm input:checked + .slider { background: #b02a2a; }
+
 .preview-wrap { padding: 4px 14px 12px; }
 .preview {
   border: 1px solid var(--border);
