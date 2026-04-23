@@ -16,8 +16,13 @@ eye is pulled smoothly from the end of one line to the start of the next.
 
 The content script:
 
-1. Walks every text node in the page (skipping `<script>`, `<code>`, inputs, etc.).
-2. Wraps each character in a `<span data-bzln>` so each glyph is independently colorable.
+1. Walks every text node in the page (skipping `<script>`, `<code>`, inputs,
+   and page chrome — `<nav>`, `<header>`, `<footer>`, `<aside>`, ARIA
+   navigation/banner/complementary/search roles, and elements whose class or
+   id contains junk tokens like `nav`, `sidebar`, `ad`, `banner`, `promo`,
+   `comment`, `share`, `byline`, `pagination`, `cookie`, etc.).
+2. Wraps each remaining character in a `<span data-bzln>` so each glyph is
+   independently colorable.
 3. Groups spans into visual lines using `getBoundingClientRect()` — a new line
    starts when the top coordinate jumps more than ~60% of a glyph's height or
    when we cross into a new block-level ancestor.

@@ -19,6 +19,59 @@
     'SVG','CANVAS','VIDEO','AUDIO','IMG','IFRAME','OBJECT','EMBED','MATH'
   ]);
 
+  // Page chrome we never want to color — only the main reading prose.
+  const NON_CONTENT_TAGS = new Set([
+    'NAV','HEADER','FOOTER','ASIDE','FORM','DIALOG','MENU'
+  ]);
+  const NON_CONTENT_ROLES = new Set([
+    'navigation','banner','complementary','contentinfo',
+    'search','form','dialog','menubar','menu','toolbar',
+    'tablist','tab','status','alert','alertdialog'
+  ]);
+  const NON_CONTENT_TOKENS = new Set([
+    'nav','navbar','navigation','menu','menubar','mobilemenu','navmenu',
+    'header','masthead','topbar',
+    'footer',
+    'sidebar','sidenav','aside',
+    'ad','ads','adv','advert','advertisement','adsense','adsbygoogle',
+    'sponsor','sponsored',
+    'banner','promo','promotion','promoted',
+    'social','share','sharing','follow',
+    'comment','comments',
+    'related','recommended','recommend',
+    'widget','gadget',
+    'popup','popover','modal','overlay','tooltip','toast','snackbar',
+    'notice','cookie','cookies','consent','gdpr',
+    'newsletter','signup','subscribe','subscription',
+    'login','auth','signin','register',
+    'breadcrumb','breadcrumbs',
+    'byline',
+    'pagination','pager','paginator',
+    'taglist','tagcloud','categories',
+    'slashbox','slashboxes',
+    'searchbar',
+    'skiplink'
+  ]);
+
+  const tokensOf = (s) =>
+    s ? s.toLowerCase().split(/[\s_-]+/).filter(Boolean) : [];
+
+  const isNonContent = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    if (NON_CONTENT_TAGS.has(el.tagName)) return true;
+    const role = el.getAttribute && el.getAttribute('role');
+    if (role && NON_CONTENT_ROLES.has(role.toLowerCase())) return true;
+    const cls = el.getAttribute && el.getAttribute('class');
+    if (cls) {
+      for (const t of tokensOf(cls)) if (NON_CONTENT_TOKENS.has(t)) return true;
+    }
+    const id = el.id;
+    if (id) {
+      for (const t of tokensOf(id)) if (NON_CONTENT_TOKENS.has(t)) return true;
+    }
+    return false;
+  };
+
   const state = { enabled: false, scheme: 'classic' };
   let mo = null;
   const pendingTimers = new Set();
@@ -41,6 +94,7 @@
     while (p) {
       if (isCharSpan(p)) return true;
       if (skipElement(p)) return true;
+      if (isNonContent(p)) return true;
       p = p.parentElement;
     }
     return false;
@@ -80,7 +134,7 @@
 
   function processRoot(root) {
     if (!root) return;
-    if (root.nodeType === 1 && (isCharSpan(root) || skipElement(root))) return;
+    if (root.nodeType === 1 && (isCharSpan(root) || skipElement(root) || isNonContent(root))) return;
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
