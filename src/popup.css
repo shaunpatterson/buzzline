@@ -61,6 +61,25 @@ select {
 }
 select:focus { border-color: var(--accent); }
 
+.actions {
+  padding: 8px 14px 4px;
+  display: flex;
+  gap: 8px;
+}
+.action-btn {
+  flex: 1;
+  appearance: none;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 .site-row {
   display: flex;
   align-items: center;
@@ -99,8 +118,22 @@ select:focus { border-color: var(--accent); }
 }
 .preview div { margin: 0; }
 
-footer { padding: 0 14px 12px; }
-.hint { margin: 0; color: var(--muted); font-size: 11px; }
+footer {
+  padding: 0 14px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hint { margin: 0; color: var(--muted); font-size: 11px; flex: 1; }
+.settings-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.settings-link:hover { text-decoration: underline; }
 
 /* toggle switch */
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; }

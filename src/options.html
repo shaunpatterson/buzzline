@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Buzzline — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <header class="page-head">
+      <div class="brand">
+        <span class="dot"></span>
+        <h1>Buzzline Settings</h1>
+      </div>
+    </header>
+
+    <section class="group">
+      <div class="group-head">
+        <h2>Sprint</h2>
+        <p class="sub">Default words-per-minute for the RSVP reader. You can still adjust the slider during a session.</p>
+      </div>
+      <div class="speed-row">
+        <input type="range" id="sprint-wpm" min="150" max="900" step="10" value="500">
+        <span class="wpm-value" id="sprint-wpm-value">500 wpm</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head">
+        <h2>Blocked sites</h2>
+        <p class="sub">Buzzline won't color text on these hostnames, even when globally enabled.</p>
+      </div>
+
+      <form class="add-row" id="add-form">
+        <input type="text" id="add-host" placeholder="example.com" autocomplete="off" spellcheck="false">
+        <button type="submit">Add</button>
+      </form>
+      <div class="add-error" id="add-error" hidden></div>
+
+      <ul class="hosts" id="hosts"></ul>
+      <p class="empty" id="empty" hidden>No sites blocked.</p>
+    </section>
+
+    <footer class="page-foot">
+      <p class="saved" id="saved" hidden>Saved.</p>
+    </footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -57,6 +57,35 @@ function initSiteRow(disabledHosts) {
   });
 }
 
+document.getElementById('settings-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (chrome.runtime.openOptionsPage) {
+    chrome.runtime.openOptionsPage();
+  } else {
+    window.open(chrome.runtime.getURL('src/options.html'));
+  }
+});
+
+function sendToActiveTab(message) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab || !tab.id) return;
+    chrome.tabs.sendMessage(tab.id, message, () => {
+      // Swallow "Receiving end does not exist" on pages where the content
+      // script isn't injected (chrome://, Web Store, etc.).
+      void chrome.runtime.lastError;
+    });
+    window.close();
+  });
+}
+
+document.getElementById('sprint-page-btn').addEventListener('click', () => {
+  sendToActiveTab({ type: 'sprint-page' });
+});
+document.getElementById('open-reader-btn').addEventListener('click', () => {
+  sendToActiveTab({ type: 'open-reader' });
+});
+
 siteToggle.addEventListener('change', () => {
   if (!currentHost) return;
   chrome.storage.sync.get(['disabledHosts'], (s) => {

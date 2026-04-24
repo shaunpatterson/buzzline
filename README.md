@@ -45,6 +45,17 @@ extension-declared stylesheet is not subject to page CSP.
 Text is split on grapheme clusters via `Intl.Segmenter`, so emoji, flags,
 and ZWJ sequences stay intact.
 
+## Sprint (RSVP reader)
+
+Every colored block gets a small yellow launcher icon at its start. Click
+it to open **Sprint** — an RSVP overlay that flashes one word at a time
+with the Optimal Recognition Point (ORP) highlighted in red and
+horizontally aligned on a fixed guide so your eye stays still.
+
+Controls: play/pause (space), prev/next word (← / →), close (Esc), speed
+slider (150–900 WPM, default 500). Punctuation and long words get
+proportionally longer holds so you can catch clause boundaries.
+
 ## Color schemes
 
 Preset palettes cycle through four colors — each line starts in one and ends
@@ -74,11 +85,12 @@ in the next, so adjacent lines share a handoff color:
 
 ```
 manifest.json          Chrome MV3 manifest
-src/content.js         Per-char span + gradient engine
-src/content.css        Base CSS rule (reads --bzln-c custom property)
+src/content.js         Per-char span + gradient engine + Sprint launchers
+src/sprint.js          RSVP reader overlay (ORP-aligned word flashing)
+src/content.css        Base CSS + launcher + Sprint overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, live preview)
-icons/                 Placeholder PNGs
-scripts/gen_icons.py   Regenerates the icons (stdlib only)
+icons/                 Extension icons (cropped from assets/logo.png)
+scripts/gen_icons.py   Regenerates the icons (Pillow)
 ```
 
 ## Dev notes

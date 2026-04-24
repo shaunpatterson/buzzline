@@ -13,6 +13,9 @@
   };
 
   const CHAR_ATTR = 'data-bzln';
+  const LAUNCHER_ATTR = 'data-bzln-launcher';
+  const GRAD_ATTR = 'data-bzln-grad';
+  const LAUNCHER_MIN_CHARS = 120; // skip captions / tiny labels
   const SKIP_TAGS = new Set([
     'SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','BUTTON',
     'CODE','PRE','KBD','SAMP','VAR','TT',
@@ -37,7 +40,6 @@
     'sponsor','sponsored',
     'banner','promo','promotion','promoted',
     'social','share','sharing','follow',
-    'comment','comments',
     'related','recommended','recommend',
     'widget','gadget',
     'popup','popover','modal','overlay','tooltip','toast','snackbar',
@@ -53,8 +55,14 @@
     'skiplink'
   ]);
 
+  // Split on whitespace only — NOT on hyphens/underscores. Modern sites use
+  // hyphenated utility classes (e.g. Tailwind's `fixed-sidebar`, `flex-nav-
+  // expanded`, `min-h-[calc(100dvh_-_var(--shreddit-header-height))]`) that
+  // would otherwise yield false-positive matches against "sidebar", "nav",
+  // "header" and skip the entire content subtree. We match only whole class
+  // names and whole ids.
   const tokensOf = (s) =>
-    s ? s.toLowerCase().split(/[\s_-]+/).filter(Boolean) : [];
+    s ? s.toLowerCase().split(/\s+/).filter(Boolean) : [];
 
   const isNonContent = (el) => {
     if (!el || el.nodeType !== 1) return false;
@@ -84,9 +92,13 @@
   const isCharSpan = (el) =>
     !!el && el.nodeType === 1 && el.hasAttribute(CHAR_ATTR);
 
+  const isLauncher = (el) =>
+    !!el && el.nodeType === 1 && el.hasAttribute && el.hasAttribute(LAUNCHER_ATTR);
+
   const skipElement = (el) => {
     if (!el || el.nodeType !== 1) return true;
     if (SKIP_TAGS.has(el.tagName)) return true;
+    if (isLauncher(el)) return true;
     if (el.isContentEditable) return true;
     if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return true;
     return false;
@@ -159,6 +171,20 @@
       if (!parent) continue;
       parent.replaceChild(document.createTextNode(span.textContent), span);
     }
+    const launchers = document.querySelectorAll(`[${LAUNCHER_ATTR}]`);
+    for (const l of launchers) l.remove();
+    const grad = document.querySelectorAll(`[${GRAD_ATTR}]`);
+    for (const el of grad) clearGradientStyle(el);
+    closeReader();
+  }
+
+  function clearGradientStyle(el) {
+    el.removeAttribute(GRAD_ATTR);
+    el.style.removeProperty('background-image');
+    el.style.removeProperty('background-clip');
+    el.style.removeProperty('-webkit-background-clip');
+    el.style.removeProperty('-webkit-text-fill-color');
+    el.style.removeProperty('color');
   }
 
   const hexToRgb = (hex) => {
@@ -242,6 +268,7 @@
       lastBlock = block;
     }
 
+    const blocks = new Set();
     for (let li = 0; li < lines.length; li++) {
       const line = lines[li];
       if (!line.spans.length) continue;
@@ -258,7 +285,296 @@
         // Write to a custom property; content.css reads it via var().
         line.spans[i].style.setProperty('--bzln-c', rgbStr(c));
       }
+      blocks.add(getBlock(line.spans[0]));
     }
+
+    syncLaunchers(blocks);
+    applyGradientBlocks(palette);
+  }
+
+  // Safe-mode gradient for contenteditable blocks (Notion, Google Docs-like
+  // editors). We can't insert char spans into a CE subtree — the editor's
+  // reconciler will wipe them on every keystroke and/or break caret/arrow-key
+  // navigation. Instead we paint a per-block CSS gradient onto the leaf via
+  // background-clip:text, keeping the DOM untouched. Colors still cycle across
+  // leaves using the same palette.
+  const isGradientLeaf = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    // A CE *root* contains nested CE elements — we only want the leaves.
+    if (el.querySelector && el.querySelector('[contenteditable="true"]')) return false;
+    const text = (el.textContent || '').trim();
+    if (!text) return false;
+    return true;
+  };
+
+  function findGradientLeaves() {
+    const nodes = document.querySelectorAll(
+      '[contenteditable="true"], [data-content-editable-leaf="true"]'
+    );
+    const out = [];
+    for (const n of nodes) {
+      if (!isGradientLeaf(n)) continue;
+      let p = n.parentElement;
+      let skip = false;
+      while (p) {
+        if (isNonContent(p) || SKIP_TAGS.has(p.tagName)) { skip = true; break; }
+        p = p.parentElement;
+      }
+      if (!skip) out.push(n);
+    }
+    return out;
+  }
+
+  function applyGradientBlocks(palette) {
+    const leaves = findGradientLeaves();
+    const current = new Set(leaves);
+    const old = document.querySelectorAll(`[${GRAD_ATTR}]`);
+    for (const el of old) if (!current.has(el)) clearGradientStyle(el);
+    for (let i = 0; i < leaves.length; i++) {
+      const el = leaves[i];
+      const start = rgbStr(palette[i % palette.length]);
+      const end = rgbStr(palette[(i + 1) % palette.length]);
+      el.setAttribute(GRAD_ATTR, '');
+      // !important — Notion's React may replace the style string on edit;
+      // when that happens, the MutationObserver re-runs applyColors and we
+      // paint again. Self-healing rather than fighting React directly.
+      el.style.setProperty(
+        'background-image',
+        `linear-gradient(to right, ${start}, ${end})`,
+        'important'
+      );
+      el.style.setProperty('background-clip', 'text', 'important');
+      el.style.setProperty('-webkit-background-clip', 'text', 'important');
+      el.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+      el.style.setProperty('color', 'transparent', 'important');
+    }
+  }
+
+  // Per-block "Sprint this" launcher. Inserted as the first child of each
+  // colored block so it scrolls with content and survives reflow. We tag
+  // launchers with LAUNCHER_ATTR so skipElement/acceptTextNode ignore them.
+  function makeLauncher(block) {
+    const btn = document.createElement('button');
+    btn.setAttribute(LAUNCHER_ATTR, '');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Sprint-read this section');
+    btn.title = 'Sprint-read this section';
+    btn.innerHTML =
+      '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+        '<rect x="0" y="0" width="20" height="20" rx="5" fill="#f7c948"/>' +
+        '<path d="M7.5 5.2 L15 10 L7.5 14.8 Z" fill="#1a1a1a"/>' +
+      '</svg>';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = extractReadableText(block);
+      if (text && typeof window.__bzlnSprint === 'function') {
+        window.__bzlnSprint(text);
+      }
+    });
+    return btn;
+  }
+
+  function extractReadableText(block) {
+    // Pull text from non-skipped descendants. Keep whitespace nodes —
+    // after splitTextNode, every grapheme (including spaces) is its own
+    // char span, so stripping whitespace here would glue every word
+    // together. Join with '' to reconstruct the original text, then
+    // collapse runs of whitespace.
+    const parts = [];
+    const walker = document.createTreeWalker(
+      block,
+      NodeFilter.SHOW_TEXT,
+      { acceptNode: (n) => {
+          if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+          let p = n.parentElement;
+          while (p && p !== block) {
+            if (isLauncher(p) || skipElement(p) || isNonContent(p)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            p = p.parentElement;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        } }
+    );
+    let n;
+    while ((n = walker.nextNode())) parts.push(n.nodeValue);
+    return parts.join('').replace(/\s+/g, ' ').trim();
+  }
+
+  function syncLaunchers(blocks) {
+    const seen = new Set();
+    for (const block of blocks) {
+      if (!block || !block.isConnected) continue;
+      // Only mount launchers directly into block-level containers (avoid
+      // floating a button into <body> when a block couldn't be resolved).
+      if (block === document.body) continue;
+      const textLen = (block.textContent || '').length;
+      if (textLen < LAUNCHER_MIN_CHARS) continue;
+
+      let launcher = block.firstElementChild;
+      if (launcher && !isLauncher(launcher)) launcher = null;
+      if (!launcher) {
+        launcher = makeLauncher(block);
+        block.insertBefore(launcher, block.firstChild);
+      }
+      seen.add(launcher);
+    }
+    // Prune launchers whose block fell out of the recolor pass (block no
+    // longer qualifies or was restructured by the page).
+    const all = document.querySelectorAll(`[${LAUNCHER_ATTR}]`);
+    for (const l of all) {
+      if (!seen.has(l)) l.remove();
+    }
+  }
+
+
+  // ---------- Whole-page extraction (used by Reader + Sprint-page) ----------
+  function extractAllBlocks() {
+    const blockCache = new WeakMap();
+    const findBlockEl = (node) => {
+      const parent = node.parentElement;
+      if (!parent) return document.body;
+      const cached = blockCache.get(parent);
+      if (cached) return cached;
+      let p = parent;
+      while (p && p !== document.body) {
+        const d = getComputedStyle(p).display;
+        if (d && d !== 'inline' && d !== 'inline-block' && d !== 'contents') break;
+        p = p.parentElement;
+      }
+      const block = p || document.body;
+      blockCache.set(parent, block);
+      return block;
+    };
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      { acceptNode: (n) => {
+          if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+          let p = n.parentElement;
+          while (p) {
+            if (isLauncher(p)) return NodeFilter.FILTER_REJECT;
+            if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+            if (isNonContent(p)) return NodeFilter.FILTER_REJECT;
+            if (p.getAttribute && p.getAttribute('aria-hidden') === 'true') {
+              return NodeFilter.FILTER_REJECT;
+            }
+            // Skip our own reader overlay so it never shows up in extraction.
+            if (p.classList && p.classList.contains('bzln-reader-root')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            p = p.parentElement;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        } }
+    );
+    const blocks = [];
+    let lastBlock = null;
+    let buf = '';
+    let n;
+    while ((n = walker.nextNode())) {
+      const block = findBlockEl(n);
+      if (block !== lastBlock) {
+        const t = buf.replace(/\s+/g, ' ').trim();
+        if (t) blocks.push(t);
+        buf = n.nodeValue;
+        lastBlock = block;
+      } else {
+        buf += n.nodeValue;
+      }
+    }
+    const t = buf.replace(/\s+/g, ' ').trim();
+    if (t) blocks.push(t);
+    return blocks;
+  }
+
+  function sprintPage() {
+    const blocks = extractAllBlocks();
+    const text = blocks.join(' ');
+    if (text && typeof window.__bzlnSprint === 'function') {
+      window.__bzlnSprint(text);
+    }
+  }
+
+  // ---------- Reader overlay ----------
+  let readerState = null;
+
+  function openReader() {
+    closeReader();
+    const blocks = extractAllBlocks();
+    if (!blocks.length) return;
+
+    const root = document.createElement('div');
+    root.className = 'bzln-reader-root';
+    const backdrop = document.createElement('div');
+    backdrop.className = 'bzln-reader-backdrop';
+    const card = document.createElement('div');
+    card.className = 'bzln-reader-card';
+
+    const header = document.createElement('div');
+    header.className = 'bzln-reader-header';
+    const title = document.createElement('div');
+    title.className = 'bzln-reader-title';
+    title.textContent = 'Buzzline · Reader';
+    const sprintAll = document.createElement('button');
+    sprintAll.className = 'bzln-reader-btn bzln-reader-primary';
+    sprintAll.type = 'button';
+    sprintAll.textContent = 'Sprint all';
+    sprintAll.addEventListener('click', () => {
+      const text = blocks.join(' ');
+      if (text && typeof window.__bzlnSprint === 'function') {
+        window.__bzlnSprint(text);
+      }
+    });
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'bzln-reader-btn';
+    closeBtn.type = 'button';
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Close (Esc)';
+    closeBtn.addEventListener('click', closeReader);
+    header.appendChild(title);
+    header.appendChild(sprintAll);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'bzln-reader-body';
+    for (const text of blocks) {
+      const p = document.createElement('p');
+      p.className = 'bzln-reader-para';
+      p.textContent = text;
+      body.appendChild(p);
+    }
+
+    card.appendChild(header);
+    card.appendChild(body);
+    root.appendChild(backdrop);
+    root.appendChild(card);
+    document.documentElement.appendChild(root);
+
+    backdrop.addEventListener('click', closeReader);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeReader(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    readerState = { root, onKey };
+
+    // Appended to <html> to escape page CSS (filter/opacity/etc.), which
+    // means the body-scoped MutationObserver won't see it. Process + paint
+    // the overlay explicitly so its paragraphs pick up per-char coloring.
+    if (state.enabled) {
+      processRoot(body);
+      applyColors();
+    }
+  }
+
+  function closeReader() {
+    if (!readerState) return;
+    document.removeEventListener('keydown', readerState.onKey, true);
+    if (readerState.root && readerState.root.parentNode) {
+      readerState.root.parentNode.removeChild(readerState.root);
+    }
+    readerState = null;
   }
 
   function trackTimer(id) { pendingTimers.add(id); return id; }
@@ -290,15 +606,26 @@
       let structureChanged = false;
       for (const m of muts) {
         if (m.type === 'childList') {
+          let ours = true;
           for (const node of m.addedNodes) {
             if (node.nodeType === 1) {
-              if (!isCharSpan(node)) processRoot(node);
+              if (!isCharSpan(node)) {
+                if (!isLauncher(node)) ours = false;
+                processRoot(node);
+              }
             } else if (node.nodeType === 3) {
+              ours = false;
               if (acceptTextNode(node)) splitTextNode(node);
+            } else {
+              ours = false;
             }
           }
-          // Any structural change may alter line wrapping — recolor.
-          if (m.addedNodes.length || m.removedNodes.length) {
+          for (const node of m.removedNodes) {
+            if (node.nodeType === 1 && (isCharSpan(node) || isLauncher(node))) continue;
+            ours = false;
+          }
+          // External structural change may alter line wrapping — recolor.
+          if (!ours && (m.addedNodes.length || m.removedNodes.length)) {
             structureChanged = true;
           }
         } else if (m.type === 'characterData') {
@@ -342,6 +669,9 @@
     applyTimer = null;
     resizeTimer = null;
     unprocessAll();
+    if (typeof window.__bzlnSprintClose === 'function') {
+      window.__bzlnSprintClose();
+    }
   }
 
   function applyEnabledState() {
@@ -355,6 +685,12 @@
     state.scheme = res.scheme || 'classic';
     state.disabledHosts = Array.isArray(res.disabledHosts) ? res.disabledHosts : [];
     applyEnabledState();
+  });
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || !msg.type) return;
+    if (msg.type === 'sprint-page') sprintPage();
+    else if (msg.type === 'open-reader') openReader();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
