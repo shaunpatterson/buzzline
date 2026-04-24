@@ -204,29 +204,34 @@ button[data-bzln-launcher] > svg {
 /* ---------- Reader overlay ---------- */
 .bzln-reader-root {
   all: initial;
-  position: fixed;
-  inset: 0;
-  z-index: 2147483645;
+  position: fixed !important;
+  inset: 0 !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 2147483645 !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   color: #1b1b1b;
 }
 .bzln-reader-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  background: rgba(0, 0, 0, 0.55) !important;
 }
 .bzln-reader-card {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(92vw, 780px);
-  height: min(90vh, 900px);
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(92vw, 780px) !important;
+  height: min(90vh, 900px) !important;
   background: #fbfbfb;
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: column !important;
   overflow: hidden;
 }
 @media (prefers-color-scheme: dark) {

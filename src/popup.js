@@ -70,12 +70,13 @@ function sendToActiveTab(message) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs && tabs[0];
     if (!tab || !tab.id) return;
+    // Close the popup AFTER the callback fires so the IPC send isn't torn
+    // down mid-flight. lastError will typically be "message port closed"
+    // because our listener doesn't call sendResponse — that's expected.
     chrome.tabs.sendMessage(tab.id, message, () => {
-      // Swallow "Receiving end does not exist" on pages where the content
-      // script isn't injected (chrome://, Web Store, etc.).
       void chrome.runtime.lastError;
+      window.close();
     });
-    window.close();
   });
 }
 

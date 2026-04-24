@@ -486,6 +486,18 @@
     }
     const t = buf.replace(/\s+/g, ' ').trim();
     if (t) blocks.push(t);
+    // Fallback: if TreeWalker extraction yielded nothing (unusual framework
+    // root, aria-hidden wrapper, non-content token on a parent, etc.),
+    // derive blocks from innerText so the reader has something to show.
+    if (!blocks.length) {
+      const text = ((document.body && document.body.innerText) || '').trim();
+      if (text) {
+        return text
+          .split(/\n\s*\n+/)
+          .map((s) => s.replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+      }
+    }
     return blocks;
   }
 
@@ -503,6 +515,7 @@
   function openReader() {
     closeReader();
     const blocks = extractAllBlocks();
+    console.log('[Buzzline] openReader — extracted blocks:', blocks.length);
     if (!blocks.length) return;
 
     const root = document.createElement('div');
@@ -689,6 +702,7 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) return;
+    console.log('[Buzzline] message received:', msg.type);
     if (msg.type === 'sprint-page') sprintPage();
     else if (msg.type === 'open-reader') openReader();
   });
