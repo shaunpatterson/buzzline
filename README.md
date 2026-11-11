@@ -118,7 +118,11 @@ precision / recall of what gets coloured (threshold 0.45):
 | 50 held-out sites | 0.841 / 0.935 | 0.975 / 0.893 | **0.982 / 0.881** |
 
 The MLP was chosen by precision-weighted F0.5 on cross-validation: wrong
-colouring is what readers notice. Remaining misses on the held-out sites are
+colouring is what readers notice. One known train/serve difference: the
+training data counted link text as "inside `<a>`" while the live page also
+counts `role=link`, `[href]`/`[url]` and `<*-link>` custom elements (Reddit
+feed titles). That only makes such pages *less* likely to be coloured; the
+next collection round will unify it. Remaining misses on the held-out sites are
 short promo paragraphs (podcast plugs, comment disclaimers) that read like
 prose. Refit with `node tests/e2e/train.js && node scripts/embed_model.js`;
 `tests/e2e/collector.js` is the page-side block collector; the committed
