@@ -180,6 +180,8 @@ scripts/gen_icons.py   Regenerates the icons (Pillow)
 
 ## Dev notes
 
+- Store package: `node scripts/package.js` → `dist/buzzline-<version>.zip` (manifest, `src/`, `icons/`). Privacy policy: [PRIVACY.md](PRIVACY.md).
+
 - No build step. Edit files, reload the extension in `chrome://extensions`,
   reload the page.
 - State lives in `chrome.storage.sync` under `enabled`, `scheme`,

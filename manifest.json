@@ -4,7 +4,7 @@
   "version": "0.3.0",
   "minimum_chrome_version": "105",
   "description": "Eye-guiding color gradients that pull your eyes through long blocks of text.",
-  "permissions": ["storage", "activeTab", "clipboardRead", "contextMenus"],
+  "permissions": ["storage", "activeTab", "contextMenus"],
   "background": { "service_worker": "src/background.js" },
   "commands": {
     "toggle-enabled": { "suggested_key": { "default": "Alt+B" }, "description": "Toggle Buzzline coloring" },
