@@ -244,7 +244,8 @@
     if (inSkippedAncestor(node)) return false;
     if (isSelfColored(node)) return false;
     // Score the block before splitting: rejected blocks get no char spans at all.
-    if (!isProseBlockEl(nearestBlock(node.parentElement))) return false;
+    const block = nearestBlock(node.parentElement);
+    if (!isProseBlockEl(block) || !inReadingRun(block)) return false;
     return true;
   };
 
@@ -571,7 +572,7 @@
   let displayMemo = new WeakMap();   // element -> is block-level display
   let statsMemo = new WeakMap();     // block   -> { text, total, link, chars, counts }
   let proseMemo = new WeakMap();     // block   -> bool
-  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); linkMemo = new WeakMap(); };
+  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); linkMemo = new WeakMap(); runMemo = new WeakMap(); blockOrderRebuilt = false; };
 
   const isBlockLevel = (el) => {
     let v = displayMemo.get(el);
@@ -666,6 +667,52 @@
     const prose = sibs.filter((c) => { const cs = blockStats(c); return cs.chars >= 80 && cs.link / Math.max(1, cs.total) < 0.5; }).length;
     f.sibProse = prose / sibs.length;
     return f;
+  }
+
+  // ---------- Reading runs ----------
+  // Only long stretches of reading text are coloured: a prose block counts if
+  // the run of prose it belongs to (in document order) reaches roughly five
+  // sentences. Headings don't break a run; RUN_GAP_CHARS of non-prose text
+  // between two prose blocks (a result title + URL, a card header) does, so
+  // isolated snippets on search results, feeds and listings stay plain.
+  const RUN_MIN_CHARS = 500, RUN_MIN_SENTENCES = 5, RUN_GAP_CHARS = 80;
+  let blockOrder = null, blockPos = null, blockOrderRoot = null, blockOrderRebuilt = false;
+  let runMemo = new WeakMap();
+  function buildBlockOrder() {
+    const roots = [contentRoot, ...rootPeers].filter(Boolean)
+      .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    const order = [], pos = new Map();
+    for (const r of roots) for (const { block } of collectReadable(r)) if (!pos.has(block)) { pos.set(block, order.length); order.push(block); }
+    blockOrder = order; blockPos = pos; blockOrderRoot = contentRoot;
+  }
+  const sentencesOf = (b) => (blockStats(b).text.match(SENTENCE_END_RX) || []).length;
+  function inReadingRun(block) {
+    let v = runMemo.get(block);
+    if (v !== undefined) return v;
+    let chars = blockStats(block).chars, sents = sentencesOf(block);
+    const enough = () => chars >= RUN_MIN_CHARS && sents >= RUN_MIN_SENTENCES;
+    if (!enough()) {
+      // Rebuild the order when the root changed, or once per pass on a miss
+      // (new content); stale entries are skipped via isConnected.
+      if (!blockOrder || blockOrderRoot !== contentRoot || (!blockPos.has(block) && !blockOrderRebuilt)) {
+        buildBlockOrder(); blockOrderRebuilt = true;
+      }
+      const i = blockPos.get(block);
+      if (i !== undefined) {
+        for (const dir of [-1, 1]) {
+          let gap = 0;
+          for (let j = i + dir; j >= 0 && j < blockOrder.length && !enough(); j += dir) {
+            const b = blockOrder[j];
+            if (!b.isConnected || isHeading(b)) continue;
+            if (isProseBlockEl(b)) { chars += blockStats(b).chars; sents += sentencesOf(b); gap = 0; }
+            else if ((gap += blockStats(b).chars) >= RUN_GAP_CHARS) break;
+          }
+        }
+      }
+    }
+    v = enough();
+    runMemo.set(block, v);
+    return v;
   }
 
   // Blocks with no real box (sr-only, clipped, collapsed) are never prose.

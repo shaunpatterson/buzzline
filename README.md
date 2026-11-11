@@ -100,6 +100,11 @@ tag, width/position, whether its ancestors look like metadata, references,
 ads, sidebars or navigation, how much prose its neighbouring/sibling blocks
 hold, and the wording of its first 220 characters (paywall/newsletter
 phrases, prices, dates and "N hours ago", digit/capital/punctuation density).
+On top of that, a block is only coloured if it sits in a *run* of reading
+text — consecutive prose blocks (headings don't break a run; ~80 characters of
+non-prose such as a result title + URL do) adding up to roughly five sentences
+and 500 characters. Search results, feed snippets and isolated one-paragraph
+cards stay plain; articles, docs, READMEs and comment threads don't notice.
 Low-scoring blocks (bylines, captions, citations, listing cards, feed titles,
 "requested review … 1 hour ago" rows) are left untouched; blocks under 50
 characters are never coloured. Ad markup (`promoted`, `ad-type`, `data-ad-*`
