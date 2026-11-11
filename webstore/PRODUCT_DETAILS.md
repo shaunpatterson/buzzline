@@ -87,7 +87,7 @@ Buzzline adds reading-guide colour gradients to the text of web pages so the rea
 
 `storage`
 ```
-Saves the user's settings (on/off, colour scheme, sites where Buzzline is turned off, per-site scheme, Sprint speed) and the user's own "should/shouldn't be coloured" marks. Nothing is sent off the device.
+Saves the user's settings (on/off, colour scheme, sites where Buzzline is turned off, per-site scheme, Sprint speed) and the user's own "should/shouldn't be coloured" marks. Settings sync through the user's own Chrome sync; the marks stay on the device. Nothing is sent to the developer or any server.
 ```
 
 `activeTab`
