@@ -245,6 +245,8 @@
     if (isSelfColored(node)) return false;
     // Score the block before splitting: rejected blocks get no char spans at all.
     const block = nearestBlock(node.parentElement);
+    // The Reader overlay holds only extracted prose: colour all of it.
+    if (block.closest('.bzln-reader-root')) return true;
     if (!isReadingCandidate(block) || !inReadingRun(block)) return false;
     return true;
   };
@@ -944,7 +946,16 @@
     return out;
   }
 
-  // Group consecutive same-block text into whitespace-collapsed strings.
+  // Group consecutive same-block text into whitespace-collapsed strings. A
+  // <br> between two text nodes starts a new string, so <br>-separated
+  // paragraphs (paulgraham.com, old forums) don't run together as "it.Partly".
+  const afterBr = (node, block) => {
+    let p = node;
+    while (p && p !== block && !p.previousSibling) p = p.parentNode;
+    let prev = p && p !== block ? p.previousSibling : null;
+    while (prev && prev.nodeType === Node.TEXT_NODE && !prev.nodeValue.trim()) prev = prev.previousSibling;
+    return !!prev && prev.nodeName === 'BR';
+  };
   function blocksFrom(entries) {
     const blocks = [];
     let lastBlock = null;
@@ -954,7 +965,7 @@
       if (t) blocks.push(t);
     };
     for (const { node, block } of entries) {
-      if (block !== lastBlock) {
+      if (block !== lastBlock || afterBr(node, block)) {
         flush();
         buf = node.nodeValue;
         lastBlock = block;
