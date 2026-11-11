@@ -1,26 +1,29 @@
 (() => {
   'use strict';
 
-  // Four-entry cycle. Line i colors go palette[i%N] → palette[(i+1)%N].
-  // The intentional duplicates (e.g. black in "classic") anchor every
-  // other line to a neutral color — the BeeLine pattern in the screenshot.
-  const SCHEMES = {
-    classic:      ['#000000', '#1f4fb0', '#000000', '#b02a2a'],
-    dark:         ['#eaeaea', '#7fb7ff', '#eaeaea', '#ff9c8a'],
-    ocean:        ['#003a5c', '#0087c7', '#003a5c', '#00b3a4'],
-    bumblebee:    ['#1a1a1a', '#d4a017', '#1a1a1a', '#8b4513'],
-    highcontrast: ['#000000', '#0000ff', '#000000', '#d40000']
-  };
+  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface } = globalThis.BuzzlineCore;
 
   const CHAR_ATTR = 'data-bzln';
   const LAUNCHER_ATTR = 'data-bzln-launcher';
   const GRAD_ATTR = 'data-bzln-grad';
   const LAUNCHER_MIN_CHARS = 120; // skip captions / tiny labels
+  const HEADING_SELECTOR = 'h1,h2,h3,h4,h5,h6,[role="heading"]';
   const SKIP_TAGS = new Set([
     'SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','BUTTON',
     'CODE','PRE','KBD','SAMP','VAR','TT',
     'SVG','CANVAS','VIDEO','AUDIO','IMG','IFRAME','OBJECT','EMBED','MATH'
   ]);
+
+  // Inline code is part of the sentence when reading aloud/RSVP; only <pre>
+  // blocks are skipped for extraction. Colouring still skips all of SKIP_TAGS.
+  const INLINE_CODE_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR', 'TT']);
+  const LINKISH = 'a, button, label, summary';
+  const MIN_BLOCK_PROSE = 40;   // chars of non-link text for a block to count
+  const MIN_PAGE_PROSE = 200;   // below this the page has no prose body
+  const DOMINANCE = 0.75;       // child must hold this share to narrow the root
+  const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+  const ROOT_RETRY_MS = 750;    // min gap between full-page root scans while no root is found
+  const isHeading = (el) => HEADING_TAGS.has(el.tagName) || el.getAttribute('role') === 'heading';
 
   // Page chrome we never want to color — only the main reading prose.
   const NON_CONTENT_TAGS = new Set([
@@ -85,9 +88,18 @@
   const isHostDisabled = () =>
     Array.isArray(state.disabledHosts) && state.disabledHosts.includes(currentHost);
   let mo = null;
+  let rootMo = null;
+  let observedBody = null;
+  // Smallest container holding the page's real prose (see pickContentRoot).
+  // Only text inside it is coloured; null = page has no prose body.
+  let contentRoot = null;
+  let rootPickedAt = 0;
+  let rootRetryTimer = null;
   const pendingTimers = new Set();
   let applyTimer = null;
   let resizeTimer = null;
+  const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onSchemeFlip = () => { if (state.enabled) applyColors(); };
 
   const isCharSpan = (el) =>
     !!el && el.nodeType === 1 && el.hasAttribute(CHAR_ATTR);
@@ -98,6 +110,8 @@
   const skipElement = (el) => {
     if (!el || el.nodeType !== 1) return true;
     if (SKIP_TAGS.has(el.tagName)) return true;
+    // Headings are not body prose; leave them in the page's own colour.
+    if (HEADING_TAGS.has(el.tagName) || el.getAttribute('role') === 'heading') return true;
     if (isLauncher(el)) return true;
     if (el.isContentEditable) return true;
     if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return true;
@@ -115,10 +129,72 @@
     return false;
   };
 
+  const inContentRoot = (node) => {
+    const p = node.parentElement;
+    return !!p && ((!!contentRoot && contentRoot.contains(p)) || !!p.closest('.bzln-reader-root'));
+  };
+
+  function ensureRoot() {
+    if (contentRoot && contentRoot.isConnected) return;
+    // A null result (no prose yet) is remembered: rescan at most once per
+    // ROOT_RETRY_MS, with a trailing retry so late-loading content is found.
+    const wait = rootPickedAt + ROOT_RETRY_MS - performance.now();
+    if (!contentRoot && rootPickedAt && wait > 0) {
+      if (!rootRetryTimer) {
+        rootRetryTimer = trackTimer(setTimeout(() => {
+          pendingTimers.delete(rootRetryTimer);
+          rootRetryTimer = null;
+          if (state.enabled) applyColors();
+        }, wait));
+      }
+      return;
+    }
+    rootPickedAt = performance.now();
+    contentRoot = pickContentRoot(collectReadable(document.body));
+    if (contentRoot) processRoot(contentRoot);
+  }
+
+  // Text with its own deliberate colour (status labels, badges, "green: good")
+  // is left alone. Links count as prose. An element is "self-coloured" when its
+  // computed colour differs from its block's; a short block is also compared
+  // with its parent's, so a coloured <div>Merged</div> label is caught too.
+  let colorMemo = new WeakMap();
+  const COLOR_TOLERANCE = 48;   // summed |dr|+|dg|+|db|
+  const sameColor = (a, b) =>
+    !a || !b || Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) <= COLOR_TOLERANCE;
+  const cssColor = (el) => parseCssColor(getComputedStyle(el).color);
+  const isBlockDisplay = (el) => {
+    const d = getComputedStyle(el).display;
+    return !!d && d !== 'inline' && d !== 'inline-block' && d !== 'contents';
+  };
+  function isSelfColored(node) {
+    const start = node.parentElement;
+    if (!start) return false;
+    const memo = colorMemo.get(start);
+    if (memo !== undefined) return memo;
+    let result = false;
+    if (!start.closest('a')) {
+      const chain = [];
+      let p = start;
+      while (p && p !== document.body && !isBlockDisplay(p)) { chain.push(p); p = p.parentElement; }
+      const block = p || document.body;
+      const base = cssColor(block);
+      result = chain.some((el) => !sameColor(cssColor(el), base));
+      if (!result && block !== document.body && block.parentElement &&
+          (block.textContent || '').trim().length <= 40) {
+        result = !sameColor(base, cssColor(block.parentElement));
+      }
+    }
+    colorMemo.set(start, result);
+    return result;
+  }
+
   const acceptTextNode = (node) => {
     if (!node.nodeValue || !node.nodeValue.trim()) return false;
     if (!node.parentElement) return false;
+    if (!inContentRoot(node)) return false;
     if (inSkippedAncestor(node)) return false;
+    if (isSelfColored(node)) return false;
     return true;
   };
 
@@ -187,23 +263,11 @@
     el.style.removeProperty('color');
   }
 
-  const hexToRgb = (hex) => {
-    const h = hex.replace('#', '');
-    return {
-      r: parseInt(h.slice(0, 2), 16),
-      g: parseInt(h.slice(2, 4), 16),
-      b: parseInt(h.slice(4, 6), 16)
-    };
-  };
-  const mix = (a, b, t) => ({
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t
-  });
-  const rgbStr = (c) => `rgb(${c.r | 0},${c.g | 0},${c.b | 0})`;
-
   function applyColors() {
-    const palette = (SCHEMES[state.scheme] || SCHEMES.classic).map(hexToRgb);
+    const scheme = SCHEMES[state.scheme] || SCHEMES.classic;
+    const palettes = { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) };
+    colorMemo = new WeakMap();
+    ensureRoot();
     const spans = document.querySelectorAll(`span[${CHAR_ATTR}]`);
     if (!spans.length) return;
 
@@ -238,6 +302,29 @@
       return v;
     };
 
+    // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
+    const bgByEl = new Map();
+    const paletteByBlock = new Map();
+    const surfaceBg = (el) => {
+      if (!el) return null;
+      if (bgByEl.has(el)) return bgByEl.get(el);
+      const c = parseCssColor(getComputedStyle(el).backgroundColor);
+      const v = c && c.a >= 0.5 ? c : surfaceBg(el.parentElement);
+      bgByEl.set(el, v);
+      return v;
+    };
+    const paletteFor = (block) => {
+      let p = paletteByBlock.get(block);
+      if (!p) {
+        // Gradient leaves are painted with color:transparent; ignore that.
+        const tc = parseCssColor(getComputedStyle(block).color);
+        const dark = isDarkSurface(surfaceBg(block), tc && tc.a > 0 ? tc : null);
+        p = dark ? palettes.dark : palettes.light;
+        paletteByBlock.set(block, p);
+      }
+      return p;
+    };
+
     // Group spans into visual lines. Skip vertical writing-mode blocks —
     // our top/left heuristic doesn't map to their flow direction.
     const lines = [];
@@ -268,10 +355,15 @@
       lastBlock = block;
     }
 
+    // Resolve every line's palette in a read-only pass so getComputedStyle
+    // never interleaves with the style.setProperty writes below.
+    const linePalettes = lines.map((l) => l.spans.length ? paletteFor(getBlock(l.spans[0])) : null);
+
     const blocks = new Set();
     for (let li = 0; li < lines.length; li++) {
       const line = lines[li];
       if (!line.spans.length) continue;
+      const palette = linePalettes[li];
       const start = palette[li % palette.length];
       const end = palette[(li + 1) % palette.length];
       const firstLeft = line.rects[0].left;
@@ -289,7 +381,7 @@
     }
 
     syncLaunchers(blocks);
-    applyGradientBlocks(palette);
+    applyGradientBlocks(paletteFor);
   }
 
   // Safe-mode gradient for contenteditable blocks (Notion, Google Docs-like
@@ -313,11 +405,11 @@
     );
     const out = [];
     for (const n of nodes) {
-      if (!isGradientLeaf(n)) continue;
+      if (!isGradientLeaf(n) || isHeading(n)) continue;
       let p = n.parentElement;
       let skip = false;
       while (p) {
-        if (isNonContent(p) || SKIP_TAGS.has(p.tagName)) { skip = true; break; }
+        if (isNonContent(p) || SKIP_TAGS.has(p.tagName) || isHeading(p)) { skip = true; break; }
         p = p.parentElement;
       }
       if (!skip) out.push(n);
@@ -325,13 +417,16 @@
     return out;
   }
 
-  function applyGradientBlocks(palette) {
+  function applyGradientBlocks(paletteFor) {
     const leaves = findGradientLeaves();
     const current = new Set(leaves);
     const old = document.querySelectorAll(`[${GRAD_ATTR}]`);
     for (const el of old) if (!current.has(el)) clearGradientStyle(el);
+    // Resolve palettes (computed-style reads) before any style writes.
+    const pals = leaves.map(paletteFor);
     for (let i = 0; i < leaves.length; i++) {
       const el = leaves[i];
+      const palette = pals[i];
       const start = rgbStr(palette[i % palette.length]);
       const end = rgbStr(palette[(i + 1) % palette.length]);
       el.setAttribute(GRAD_ATTR, '');
@@ -367,7 +462,7 @@
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const text = extractReadableText(block);
+      const text = sectionText(block);
       if (text && typeof window.__bzlnSprint === 'function') {
         window.__bzlnSprint(text);
       }
@@ -375,43 +470,45 @@
     return btn;
   }
 
-  function extractReadableText(block) {
-    // Pull text from non-skipped descendants. Keep whitespace nodes —
-    // after splitTextNode, every grapheme (including spaces) is its own
-    // char span, so stripping whitespace here would glue every word
-    // together. Join with '' to reconstruct the original text, then
-    // collapse runs of whitespace.
-    const parts = [];
-    const walker = document.createTreeWalker(
-      block,
-      NodeFilter.SHOW_TEXT,
-      { acceptNode: (n) => {
-          if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
-          let p = n.parentElement;
-          while (p && p !== block) {
-            if (isLauncher(p) || skipElement(p) || isNonContent(p)) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            p = p.parentElement;
-          }
-          return NodeFilter.FILTER_ACCEPT;
-        } }
-    );
-    let n;
-    while ((n = walker.nextNode())) parts.push(n.nodeValue);
-    return parts.join('').replace(/\s+/g, ' ').trim();
+  // Sprint text for the heading-delimited section containing `block`: from the
+  // preceding heading (inclusive) to the next heading (exclusive).
+  function sectionText(block) {
+    const root = contentRoot || document.body;
+    let start = null;
+    let end = null;
+    for (const h of root.querySelectorAll(HEADING_SELECTOR)) {
+      if (h.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING) start = h;
+      else { end = h; break; }
+    }
+    const entries = collectReadable(root).filter(({ node }) =>
+      (!start || (start.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
+      (!end || (end.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING)));
+    return blocksFrom(entries).join(' ');
+  }
+
+  // First block of every heading-delimited section that holds enough text.
+  // Paragraphs and list items inside one section share a single launcher.
+  function sectionStarts(blocks) {
+    const root = contentRoot || document.body;
+    const heads = [...root.querySelectorAll(HEADING_SELECTOR)];
+    const ordered = [...blocks]
+      .filter((b) => b && b.isConnected && b !== document.body && !b.closest('.bzln-reader-root'))
+      .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    const groups = new Map();   // index of governing heading -> { first, len }
+    let h = -1;
+    for (const b of ordered) {
+      while (h + 1 < heads.length &&
+             (heads[h + 1].compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)) h++;
+      const len = (b.textContent || '').length;
+      const g = groups.get(h);
+      if (g) g.len += len; else groups.set(h, { first: b, len });
+    }
+    return [...groups.values()].filter((g) => g.len >= LAUNCHER_MIN_CHARS).map((g) => g.first);
   }
 
   function syncLaunchers(blocks) {
     const seen = new Set();
-    for (const block of blocks) {
-      if (!block || !block.isConnected) continue;
-      // Only mount launchers directly into block-level containers (avoid
-      // floating a button into <body> when a block couldn't be resolved).
-      if (block === document.body) continue;
-      const textLen = (block.textContent || '').length;
-      if (textLen < LAUNCHER_MIN_CHARS) continue;
-
+    for (const block of sectionStarts(blocks)) {
       let launcher = block.firstElementChild;
       if (launcher && !isLauncher(launcher)) launcher = null;
       if (!launcher) {
@@ -420,21 +517,38 @@
       }
       seen.add(launcher);
     }
-    // Prune launchers whose block fell out of the recolor pass (block no
-    // longer qualifies or was restructured by the page).
+    // Prune launchers that are no longer the start of a section (block
+    // restructured, section merged, or text fell below the minimum).
     const all = document.querySelectorAll(`[${LAUNCHER_ATTR}]`);
     for (const l of all) {
       if (!seen.has(l)) l.remove();
     }
   }
 
+  const isExtractionSkipped = (el) =>
+    (SKIP_TAGS.has(el.tagName) && !INLINE_CODE_TAGS.has(el.tagName)) ||
+    isLauncher(el) ||
+    isNonContent(el) ||
+    el.getAttribute('aria-hidden') === 'true' ||
+    el.classList.contains('bzln-reader-root') ||
+    el.classList.contains('bzln-sprint-root');
 
-  // ---------- Whole-page extraction (used by Reader + Sprint-page) ----------
-  function extractAllBlocks() {
-    const blockCache = new WeakMap();
-    const findBlockEl = (node) => {
-      const parent = node.parentElement;
-      if (!parent) return document.body;
+  // -> [{ node, block }] for every readable, rendered text node under root.
+  // Whitespace-only nodes are kept: after splitTextNode every grapheme
+  // (including spaces) is its own char span.
+  function collectReadable(root) {
+    const skipCache = new Map();
+    const skipped = (el) => {
+      if (!el) return false;
+      let v = skipCache.get(el);
+      if (v === undefined) {
+        v = isExtractionSkipped(el) || skipped(el.parentElement);
+        skipCache.set(el, v);
+      }
+      return v;
+    };
+    const blockCache = new Map();
+    const blockOf = (parent) => {
       const cached = blockCache.get(parent);
       if (cached) return cached;
       let p = parent;
@@ -447,45 +561,99 @@
       blockCache.set(parent, block);
       return block;
     };
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      { acceptNode: (n) => {
-          if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
-          let p = n.parentElement;
-          while (p) {
-            if (isLauncher(p)) return NodeFilter.FILTER_REJECT;
-            if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-            if (isNonContent(p)) return NodeFilter.FILTER_REJECT;
-            if (p.getAttribute && p.getAttribute('aria-hidden') === 'true') {
-              return NodeFilter.FILTER_REJECT;
-            }
-            // Skip our own reader overlay so it never shows up in extraction.
-            if (p.classList && p.classList.contains('bzln-reader-root')) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            p = p.parentElement;
-          }
-          return NodeFilter.FILTER_ACCEPT;
-        } }
-    );
+    const visCache = new Map();
+    const rendered = (b) => {
+      let v = visCache.get(b);
+      if (v === undefined) {
+        v = b.checkVisibility ? b.checkVisibility({ visibilityProperty: true }) : true;
+        visCache.set(b, v);
+      }
+      return v;
+    };
+    const out = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walker.nextNode())) {
+      const parent = n.parentElement;
+      if (!n.nodeValue || !parent || skipped(parent)) continue;
+      const block = blockOf(parent);
+      if (!rendered(block)) continue;
+      out.push({ node: n, block });
+    }
+    return out;
+  }
+
+  // Group consecutive same-block text into whitespace-collapsed strings.
+  function blocksFrom(entries) {
     const blocks = [];
     let lastBlock = null;
     let buf = '';
-    let n;
-    while ((n = walker.nextNode())) {
-      const block = findBlockEl(n);
+    const flush = () => {
+      const t = buf.replace(/\s+/g, ' ').trim();
+      if (t) blocks.push(t);
+    };
+    for (const { node, block } of entries) {
       if (block !== lastBlock) {
-        const t = buf.replace(/\s+/g, ' ').trim();
-        if (t) blocks.push(t);
-        buf = n.nodeValue;
+        flush();
+        buf = node.nodeValue;
         lastBlock = block;
       } else {
-        buf += n.nodeValue;
+        buf += node.nodeValue;
       }
     }
-    const t = buf.replace(/\s+/g, ' ').trim();
-    if (t) blocks.push(t);
+    flush();
+    return blocks;
+  }
+
+  // Smallest container holding the page's prose: descend from <body> while one
+  // child holds >= DOMINANCE of the current root's prose mass. Link/button text
+  // carries no mass, so nav lists, file tables and headline grids never win.
+  function pickContentRoot(entries) {
+    const linkCache = new Map();
+    const linkish = (el) => {
+      if (!el) return false;
+      let v = linkCache.get(el);
+      if (v === undefined) {
+        v = el.matches(LINKISH) || linkish(el.parentElement);
+        linkCache.set(el, v);
+      }
+      return v;
+    };
+    const prose = new Map();                       // block -> non-link chars
+    for (const { node, block } of entries) {
+      if (linkish(node.parentElement)) continue;
+      const len = node.nodeValue.replace(/\s+/g, ' ').trim().length;
+      if (len) prose.set(block, (prose.get(block) || 0) + len);
+    }
+    const mass = new Map();                        // element -> prose in subtree
+    for (const [block, m] of prose) {
+      if (m < MIN_BLOCK_PROSE) continue;
+      for (let el = block; el; el = el.parentElement) mass.set(el, (mass.get(el) || 0) + m);
+    }
+    let root = document.body;
+    if ((mass.get(root) || 0) < MIN_PAGE_PROSE) return null;
+    for (;;) {
+      let best = null, bestMass = 0;
+      for (const c of root.children) {
+        const m = mass.get(c) || 0;
+        if (m > bestMass) { bestMass = m; best = c; }
+      }
+      if (!best || bestMass < DOMINANCE * mass.get(root)) break;
+      // best is itself a paragraph-like block (owns most of its mass directly):
+      // stop so a single long paragraph never becomes the whole root.
+      if ((prose.get(best) || 0) >= 0.5 * bestMass) break;
+      root = best;
+    }
+    return root;
+  }
+
+  // ---------- Whole-page extraction (used by Reader + Sprint-page) ----------
+  function extractAllBlocks() {
+    const entries = collectReadable(document.body);
+    const root = pickContentRoot(entries) || document.body;
+    const blocks = blocksFrom(
+      root === document.body ? entries : entries.filter((e) => root.contains(e.node))
+    );
     // Fallback: if TreeWalker extraction yielded nothing (unusual framework
     // root, aria-hidden wrapper, non-content token on a parent, etc.),
     // derive blocks from innerText so the reader has something to show.
@@ -502,8 +670,8 @@
   }
 
   function sprintPage() {
-    const blocks = extractAllBlocks();
-    const text = blocks.join(' ');
+    const sel = String(window.getSelection() || '').replace(/\s+/g, ' ').trim();
+    const text = sel || extractAllBlocks().join(' ');
     if (text && typeof window.__bzlnSprint === 'function') {
       window.__bzlnSprint(text);
     }
@@ -615,7 +783,10 @@
 
   function startObserving() {
     if (mo) mo.disconnect();
+    observedBody = document.body;
     mo = new MutationObserver((muts) => {
+      colorMemo = new WeakMap();
+      if (!contentRoot) { scheduleApply(); return; }
       let structureChanged = false;
       for (const m of muts) {
         if (m.type === 'childList') {
@@ -664,10 +835,21 @@
       document.addEventListener('DOMContentLoaded', enable, { once: true });
       return;
     }
-    processRoot(document.body);
     applyColors();
     startObserving();
+    // SPA/Turbo navigations can swap the <body> element wholesale; the body
+    // observer would stay on the detached node. Watch <html>'s direct
+    // children (no subtree) so overlays appended there hit the early return.
+    rootMo = new MutationObserver(() => {
+      if (!document.body || document.body === observedBody) return;
+      contentRoot = null;
+      rootPickedAt = 0;
+      applyColors();
+      startObserving();
+    });
+    rootMo.observe(document.documentElement, { childList: true });
     window.addEventListener('resize', onResize);
+    darkMq.addEventListener('change', onSchemeFlip);
     // Late layout shifts (webfonts, images) change line wrapping after the
     // initial paint. Re-apply twice to catch them.
     trackTimer(setTimeout(() => { if (state.enabled) applyColors(); }, 500));
@@ -676,7 +858,13 @@
 
   function disable() {
     if (mo) { mo.disconnect(); mo = null; }
+    if (rootMo) { rootMo.disconnect(); rootMo = null; }
+    observedBody = null;
+    contentRoot = null;
+    rootPickedAt = 0;
+    rootRetryTimer = null;
     window.removeEventListener('resize', onResize);
+    darkMq.removeEventListener('change', onSchemeFlip);
     for (const t of pendingTimers) clearTimeout(t);
     pendingTimers.clear();
     applyTimer = null;

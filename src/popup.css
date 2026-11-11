@@ -102,9 +102,6 @@ select:focus { border-color: var(--accent); }
   white-space: nowrap;
   max-width: 230px;
 }
-/* When the site toggle is ON, Buzzline is DISABLED on this site —
-   invert the visual so "on" = red/muted, matching user intent. */
-.switch-sm input:checked + .slider { background: #b02a2a; }
 
 .preview-wrap { padding: 4px 14px 12px; }
 .preview {

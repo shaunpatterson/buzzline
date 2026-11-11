@@ -20,10 +20,6 @@
     return 4;
   }
 
-  function tokenize(text) {
-    return text.trim().split(/\s+/).filter(Boolean);
-  }
-
   // Hold longer on punctuation and on long words so readers catch clause
   // boundaries. Multipliers are applied to the base WPM tick.
   function delayMultiplier(word) {
@@ -130,7 +126,7 @@
 
   function build(text) {
     close();
-    const words = tokenize(text);
+    const words = globalThis.BuzzlineCore.tokenizeWords(text);
     if (!words.length) return;
     const myToken = ++buildToken;
     resolveStartWpm((startWpm) => {

@@ -16,7 +16,10 @@ eye is pulled smoothly from the end of one line to the start of the next.
 
 The content script:
 
-1. Walks every text node in the page (skipping `<script>`, `<code>`, inputs,
+1. Finds the page's main prose container (like a reader mode: the smallest
+   element holding most of the non-link text, so file tables, link lists and
+   sidebars are left alone; pages with no prose body are not coloured), then
+   walks every text node in it (skipping `<script>`, `<code>`, inputs,
    and page chrome — `<nav>`, `<header>`, `<footer>`, `<aside>`, ARIA
    navigation/banner/complementary/search roles, and elements whose class or
    id contains junk tokens like `nav`, `sidebar`, `ad`, `banner`, `promo`,
@@ -33,8 +36,8 @@ The content script:
    and watches the DOM with a `MutationObserver` (childList + characterData)
    to handle dynamic content.
 
-Per-site opt-out: the popup shows the current hostname and a "Disable on
-this site" toggle. Hostnames you opt out of are stored in
+Per-site opt-out: the popup shows the current hostname behind an "Enabled on"
+toggle; switch it off to skip that site. Disabled hostnames are stored in
 `chrome.storage.sync` under `disabledHosts` and are skipped even when the
 global switch is on.
 
@@ -52,6 +55,11 @@ it to open **Sprint** — an RSVP overlay that flashes one word at a time
 with the Optimal Recognition Point (ORP) highlighted in red and
 horizontally aligned on a fixed guide so your eye stays still.
 
+"Sprint this page" reads your current text selection if there is one,
+otherwise the page's main prose container (nav, link lists, and hidden text
+are ignored; inline `<code>` is kept). Lone punctuation marks are merged
+into the neighbouring word so they never flash on their own.
+
 Controls: play/pause (space), prev/next word (← / →), close (Esc), speed
 slider (150–900 WPM, default 500). Punctuation and long words get
 proportionally longer holds so you can catch clause boundaries.
@@ -59,10 +67,12 @@ proportionally longer holds so you can catch clause boundaries.
 ## Color schemes
 
 Preset palettes cycle through four colors — each line starts in one and ends
-in the next, so adjacent lines share a handoff color:
+in the next, so adjacent lines share a handoff color. Every scheme has a
+light and a dark variant; Buzzline picks one per text block from the
+block's actual background (falling back to its text color), so dark-themed
+pages and the OS dark mode are readable without a separate scheme.
 
-- **Classic** — black / blue / black / red
-- **Dark mode** — light gray / light blue / light gray / peach
+- **Classic** — black / blue / black / red (dark: light gray / light blue / light gray / peach)
 - **Ocean** — navy / teal / navy / seafoam
 - **Bumblebee** — near-black / gold / near-black / brown
 - **High contrast** — black / pure blue / black / pure red
@@ -86,9 +96,11 @@ in the next, so adjacent lines share a handoff color:
 ```
 manifest.json          Chrome MV3 manifest
 src/content.js         Per-char span + gradient engine + Sprint launchers
+src/core.js            Shared pure helpers: schemes, colour math, Sprint tokenizer
 src/sprint.js          RSVP reader overlay (ORP-aligned word flashing)
 src/content.css        Base CSS + launcher + Sprint overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, live preview)
+tests/core.test.js     Unit tests for core.js (`node --test`)
 icons/                 Extension icons (cropped from assets/logo.png)
 scripts/gen_icons.py   Regenerates the icons (Pillow)
 ```
