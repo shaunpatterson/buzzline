@@ -51,7 +51,7 @@
 <li><strong>Samples per weight is fine.</strong> 932 labelled blocks for 17 weights ≈ 55 per weight, with L2 regularisation. A logistic model this small cannot overfit much on block count.</li>
 <li><strong>Site diversity is the real limit.</strong> 17 training sites, 11 unseen. Several features (<code>meta</code>, <code>chrome</code>, <code>side</code>) are class-name flags that one or two sites dominate. Leave-one-site-out shows it: Wikipedia alone drops to <strong>0.77 precision</strong> held-out because no other training site has a reference list that looks like Wikipedia's.</li>
 <li><strong>Labels are LLM-judged, not human-judged.</strong> Spot reads found systematic noise: fully-linked teaser cards (BBC, Vox, <code>link=1</code>) labelled as body text. The model is partly trained toward those errors.</li>
-<li><strong>Reference point:</strong> Chrome's on-device Reading Mode model is a 241k-parameter GNN trained on ~100k hand-labelled nodes. Buzzline doesn't need that, but 17 sites is two orders of magnitude thinner on layout variety.</li>
+<li><strong>Reference point:</strong> Chrome's on-device Reading Mode model is a 241k-parameter GNN trained on ~100k labelled articles (accessibility trees). Buzzline doesn't need that, but 17 sites is two orders of magnitude thinner on layout variety.</li>
 </ul>
 <table>
 <tr><th>Metric (char-weighted)</th><th class="num">Before model</th><th class="num">With model</th></tr>
