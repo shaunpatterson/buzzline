@@ -44,3 +44,17 @@ test('every scheme has anchored 4-colour light/dark variants readable on dark su
     }
   }
 });
+
+test('blockScore separates long prose from metadata, references and link chrome', () => {
+  const { blockScore, isProseBlock } = require('../src/core.js');
+  const base = { chars: 0, words: 0, sentences: 0, endsPunct: false, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'div', wFrac: 0.5, cx: 0.5 };
+  const prose = { ...base, chars: 420, words: 70, sentences: 4, endsPunct: true, tag: 'p', main: 1, chain: 'p>div.post>article' };
+  const reference = { ...base, chars: 300, words: 40, sentences: 3, endsPunct: true, linkFrac: 0.5, tag: 'li', chain: 'li#cite_note-4>ol.mw-references' };
+  const byline = { ...base, chars: 45, words: 7, sentences: 0, tag: 'div', chain: 'div.dateline>div#abs' };
+  const sidebarLinks = { ...base, chars: 90, words: 12, linkFrac: 1, tag: 'li', side: 1, chrome: 1, cx: 0.9, wFrac: 0.2 };
+  assert.ok(isProseBlock(prose), 'long paragraph is prose');
+  assert.ok(!isProseBlock(reference), 'citation entry is not');
+  assert.ok(!isProseBlock(byline), 'dateline is not');
+  assert.ok(!isProseBlock(sidebarLinks), 'sidebar link list is not');
+  assert.ok(blockScore(prose) > blockScore({ ...prose, chars: 60 }), 'longer text scores higher');
+});

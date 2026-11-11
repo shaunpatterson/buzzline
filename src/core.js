@@ -67,7 +67,36 @@
     return out;
   };
 
-  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, tokenizeWords };
+  // Tiny logistic model: is this text block "guts" (long-form prose a person
+  // reads) rather than metadata, captions, references, ads or link chrome?
+  // Trained on LLM-labelled blocks from 17 real sites (tests/e2e); evaluated
+  // leave-one-site-out. Input is a plain feature object (see blockScore).
+  const META_RX = /(cite|citation|reference|caption|metadata|byline|dateline|author|footer|credit|timestamp|breadcrumb|toc|disclaimer|copyright|modified|meta)/i;
+  const BLOCK_MODEL = {
+    threshold: 0.4,
+    //        bias    logChars linkFrac sentDens endsPunct meta    ad      rel    side    nav     chrome  main    isP    isLi   isTd   wFrac  edge
+    w: [-1.163, 1.846, -2.193, 0.533, 0.192, -3.456, -1.159, 0.062, -0.595, -0.739, -2.317, -0.17, 3.132, 1.606, 0.066, 0.679, -0.572]
+  };
+  const sigmoid = (z) => 1 / (1 + Math.exp(-z));
+  // f: { chars, words, sentences, endsPunct, linkFrac, chain, ad, rel, side, nav,
+  //      chrome (nav/aside/header/footer ancestors), main (main/article ancestors),
+  //      tag, wFrac (width / viewport), cx (horizontal centre / viewport) }
+  const blockScore = (f) => {
+    const x = [
+      1, Math.log10(Math.max(1, f.chars)) / 3, f.linkFrac, Math.min(1, (f.sentences / Math.max(1, f.words)) * 10),
+      f.endsPunct ? 1 : 0, META_RX.test(f.chain || '') ? 1 : 0,
+      f.ad > 0 ? 1 : 0, f.rel > 0 ? 1 : 0, f.side > 0 ? 1 : 0, f.nav > 0 ? 1 : 0,
+      f.chrome > 0 ? 1 : 0, f.main > 0 ? 1 : 0,
+      f.tag === 'p' ? 1 : 0, f.tag === 'li' ? 1 : 0, (f.tag === 'td' || f.tag === 'th') ? 1 : 0,
+      f.wFrac, Math.abs(f.cx - 0.5) * 2
+    ];
+    let z = 0;
+    for (let i = 0; i < x.length; i++) z += x[i] * BLOCK_MODEL.w[i];
+    return sigmoid(z);
+  };
+  const isProseBlock = (f) => blockScore(f) > BLOCK_MODEL.threshold;
+
+  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineCore = api;
 })();

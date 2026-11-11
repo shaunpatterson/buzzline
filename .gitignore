@@ -1,0 +1,3 @@
+
+# Raw page dumps (scraped article text) must never be committed
+tests/e2e/data/raw/

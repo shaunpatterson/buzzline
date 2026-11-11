@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface } = globalThis.BuzzlineCore;
+  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, isProseBlock } = globalThis.BuzzlineCore;
 
   const CHAR_ATTR = 'data-bzln';
   const LAUNCHER_ATTR = 'data-bzln-launcher';
@@ -95,6 +95,13 @@
   let contentRoot = null;
   let rootPickedAt = 0;
   let rootRetryTimer = null;
+  // Set when substantial new text is added outside contentRoot (lazy-loaded
+  // comments, SPA shells): the root may be a stale, too-small container.
+  let rootStale = false;
+  // Sibling regions of the same kind as the root's ancestors (other timeline
+  // comments next to a dominant description); coloured along with contentRoot.
+  let rootPeers = [];
+  const inRoots = (el) => (!!contentRoot && contentRoot.contains(el)) || rootPeers.some((r) => r.contains(el));
   const pendingTimers = new Set();
   let applyTimer = null;
   let resizeTimer = null;
@@ -131,15 +138,15 @@
 
   const inContentRoot = (node) => {
     const p = node.parentElement;
-    return !!p && ((!!contentRoot && contentRoot.contains(p)) || !!p.closest('.bzln-reader-root'));
+    return !!p && (inRoots(p) || !!p.closest('.bzln-reader-root'));
   };
 
   function ensureRoot() {
-    if (contentRoot && contentRoot.isConnected) return;
-    // A null result (no prose yet) is remembered: rescan at most once per
-    // ROOT_RETRY_MS, with a trailing retry so late-loading content is found.
+    if (contentRoot && contentRoot.isConnected && !rootStale) return;
+    // A null/stale result is rescanned at most once per ROOT_RETRY_MS, with a
+    // trailing retry so late-loading content is found.
     const wait = rootPickedAt + ROOT_RETRY_MS - performance.now();
-    if (!contentRoot && rootPickedAt && wait > 0) {
+    if ((!contentRoot || rootStale) && rootPickedAt && wait > 0) {
       if (!rootRetryTimer) {
         rootRetryTimer = trackTimer(setTimeout(() => {
           pendingTimers.delete(rootRetryTimer);
@@ -150,8 +157,12 @@
       return;
     }
     rootPickedAt = performance.now();
-    contentRoot = pickContentRoot(collectReadable(document.body));
-    if (contentRoot) processRoot(contentRoot);
+    const prev = contentRoot && contentRoot.isConnected ? contentRoot : null;
+    const picked = pickContentRoot(collectReadable(document.body));
+    contentRoot = picked ? picked.root : (rootStale ? prev : null);
+    rootPeers = picked ? picked.peers : (rootStale && prev ? rootPeers : []);
+    rootStale = false;
+    if (contentRoot) { processRoot(contentRoot); rootPeers.forEach(processRoot); }
   }
 
   // Text with its own deliberate colour (status labels, badges, "green: good")
@@ -263,6 +274,49 @@
     el.style.removeProperty('color');
   }
 
+  // Raw features for core's blockScore. `s` holds the block's own text, accumulated
+  // from its char spans: { text, total (raw chars), link (raw chars inside <a>) }.
+  const FEAT_AD = /(^|[\s_-])(ad|ads|advert|advertisement|sponsor|sponsored|promo|promoted|outbrain|taboola)($|[\s_-])/i;
+  const FEAT_REL = /(related|recommend|trending|popular|most-read|mostread|more-stories|newsletter|subscribe|signup|follow|share|social|cookie|consent|breadcrumb)/i;
+  const FEAT_SIDE = /(sidebar|aside|rail|widget)/i;
+  const FEAT_NAV = /(^|[\s_-])(nav|navbar|menu|header|masthead|footer|toolbar|tabs?)($|[\s_-])/i;
+  const CHROME_TAGS = new Set(['nav', 'aside', 'header', 'footer']);
+  const CHROME_ROLES = new Set(['navigation', 'complementary', 'banner', 'contentinfo']);
+  function blockFeatures(block, s) {
+    const text = s.text.replace(/\s+/g, ' ').trim();
+    const rect = block.getBoundingClientRect();
+    const vw = window.innerWidth || 1;
+    const f = {
+      chars: text.length,
+      words: text ? text.split(' ').length : 0,
+      sentences: (text.match(/[.!?]["')\]]?(\s|$)/g) || []).length,
+      endsPunct: /[.!?]["')\]]?$/.test(text),
+      linkFrac: s.link / Math.max(1, s.total),
+      tag: block.tagName.toLowerCase(),
+      wFrac: rect.width / vw,
+      cx: (rect.left + rect.right) / 2 / vw,
+      ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, chain: ''
+    };
+    const chain = [];
+    for (let e = block; e && e !== document.documentElement; e = e.parentElement) {
+      const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
+      if (FEAT_AD.test(cls)) f.ad++;
+      if (FEAT_REL.test(cls)) f.rel++;
+      if (FEAT_SIDE.test(cls)) f.side++;
+      if (FEAT_NAV.test(cls)) f.nav++;
+      const t = e.tagName.toLowerCase();
+      const role = e.getAttribute('role');
+      if (CHROME_TAGS.has(t) || (role && CHROME_ROLES.has(role))) f.chrome++;
+      if (t === 'main' || t === 'article' || role === 'main') f.main++;
+      if (chain.length < 6) {
+        const c0 = typeof e.className === 'string' && e.className ? e.className.trim().split(/\s+/)[0].slice(0, 18) : '';
+        chain.push(t + (e.id ? '#' + e.id.slice(0, 18) : '') + (c0 ? '.' + c0 : ''));
+      }
+    }
+    f.chain = chain.join('>');
+    return f;
+  }
+
   function applyColors() {
     const scheme = SCHEMES[state.scheme] || SCHEMES.classic;
     const palettes = { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) };
@@ -275,6 +329,23 @@
     // which is stable within a run and shared by most sibling char spans —
     // collapses tens of thousands of getComputedStyle calls into a few.
     const blockByParent = new Map();
+    const blockStats = new Map();
+    const linkByParent = new Map();
+    const inLink = (p) => {
+      let v = linkByParent.get(p);
+      if (v === undefined) { v = !!p && !!p.closest('a'); linkByParent.set(p, v); }
+      return v;
+    };
+    const proseByBlock = new Map();
+    const isProse = (block) => {
+      let v = proseByBlock.get(block);
+      if (v === undefined) {
+        const s = blockStats.get(block);
+        v = !!s && isProseBlock(blockFeatures(block, s));
+        proseByBlock.set(block, v);
+      }
+      return v;
+    };
     const verticalByBlock = new Map();
 
     const getBlock = (el) => {
@@ -338,6 +409,12 @@
       if (!rect.width && !rect.height) continue;
       const block = getBlock(span);
       if (isVertical(block)) continue;
+      let bs = blockStats.get(block);
+      if (!bs) { bs = { text: '', total: 0, link: 0 }; blockStats.set(block, bs); }
+      const ch = span.textContent;
+      bs.text += ch;
+      bs.total += ch.length;
+      if (inLink(span.parentElement)) bs.link += ch.length;
       const top = rect.top;
       const heightGuard = Math.max(1, rect.height);
       const lineBreak =
@@ -358,14 +435,22 @@
     // Resolve every line's palette in a read-only pass so getComputedStyle
     // never interleaves with the style.setProperty writes below.
     const linePalettes = lines.map((l) => l.spans.length ? paletteFor(getBlock(l.spans[0])) : null);
+    const lineOk = lines.map((l) => l.spans.length ? isProse(getBlock(l.spans[0])) : false);
 
     const blocks = new Set();
+    let k = 0;   // index among painted lines, so the colour cycle skips plain ones
     for (let li = 0; li < lines.length; li++) {
       const line = lines[li];
       if (!line.spans.length) continue;
+      if (!lineOk[li]) {
+        // Not long-form prose (metadata, captions, references...): leave plain.
+        for (const sp of line.spans) sp.style.removeProperty('--bzln-c');
+        continue;
+      }
       const palette = linePalettes[li];
-      const start = palette[li % palette.length];
-      const end = palette[(li + 1) % palette.length];
+      const start = palette[k % palette.length];
+      const end = palette[(k + 1) % palette.length];
+      k++;
       const firstLeft = line.rects[0].left;
       const lastRight = line.rects[line.rects.length - 1].right;
       const width = Math.max(1, lastRight - firstLeft);
@@ -477,7 +562,7 @@
     let start = null;
     let end = null;
     for (const h of root.querySelectorAll(HEADING_SELECTOR)) {
-      if (h.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING) start = h;
+      if (h === block || h.contains(block) || (h.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING)) start = h;
       else { end = h; break; }
     }
     const entries = collectReadable(root).filter(({ node }) =>
@@ -501,9 +586,11 @@
              (heads[h + 1].compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)) h++;
       const len = (b.textContent || '').length;
       const g = groups.get(h);
-      if (g) g.len += len; else groups.set(h, { first: b, len });
+      if (g) g.len += len; else groups.set(h, { first: b, head: h >= 0 ? heads[h] : null, len });
     }
-    return [...groups.values()].filter((g) => g.len >= LAUNCHER_MIN_CHARS).map((g) => g.first);
+    // Launcher goes on the section's heading; text before the first heading
+    // (no heading) falls back to its first block.
+    return [...groups.values()].filter((g) => g.len >= LAUNCHER_MIN_CHARS).map((g) => g.head || g.first);
   }
 
   function syncLaunchers(blocks) {
@@ -644,15 +731,36 @@
       if ((prose.get(best) || 0) >= 0.5 * bestMass) break;
       root = best;
     }
-    return root;
+    // Repeated structure holding prose of its own, e.g. other comments beside a
+    // dominant PR description: a sibling of an ancestor-or-self of the root with
+    // the same tag, mostly the same classes (Jaccard >= 0.5) and at least
+    // MIN_PAGE_PROSE of prose. Only the nearest level that has any counts.
+    const peers = [];
+    if (root !== document.body) {
+      for (let a = root; a && a !== document.body && !peers.length; a = a.parentElement) {
+        const par = a.parentElement;
+        if (!par || !a.className) continue;
+        const mine = new Set(tokensOf(a.getAttribute('class')));
+        for (const s of par.children) {
+          if (s === a || s.tagName !== a.tagName || (mass.get(s) || 0) < MIN_PAGE_PROSE) continue;
+          const theirs = new Set(tokensOf(s.getAttribute('class')));
+          let shared = 0;
+          for (const t of theirs) if (mine.has(t)) shared++;
+          if (shared / (mine.size + theirs.size - shared) >= 0.5) peers.push(s);
+        }
+      }
+    }
+    return { root, peers };
   }
 
   // ---------- Whole-page extraction (used by Reader + Sprint-page) ----------
   function extractAllBlocks() {
     const entries = collectReadable(document.body);
-    const root = pickContentRoot(entries) || document.body;
+    const picked = pickContentRoot(entries);
+    const root = picked ? picked.root : document.body;
+    const peers = picked ? picked.peers : [];
     const blocks = blocksFrom(
-      root === document.body ? entries : entries.filter((e) => root.contains(e.node))
+      root === document.body ? entries : entries.filter((e) => root.contains(e.node) || peers.some((p) => p.contains(e.node)))
     );
     // Fallback: if TreeWalker extraction yielded nothing (unusual framework
     // root, aria-hidden wrapper, non-content token on a parent, etc.),
@@ -795,6 +903,8 @@
             if (node.nodeType === 1) {
               if (!isCharSpan(node)) {
                 if (!isLauncher(node)) ours = false;
+                if (contentRoot && !isLauncher(node) && !inRoots(node) &&
+                    (node.textContent || '').length >= MIN_PAGE_PROSE) rootStale = true;
                 processRoot(node);
               }
             } else if (node.nodeType === 3) {
@@ -844,6 +954,7 @@
       if (!document.body || document.body === observedBody) return;
       contentRoot = null;
       rootPickedAt = 0;
+      rootStale = false;
       applyColors();
       startObserving();
     });
@@ -862,7 +973,9 @@
     observedBody = null;
     contentRoot = null;
     rootPickedAt = 0;
+    rootStale = false;
     rootRetryTimer = null;
+    rootPeers = [];
     window.removeEventListener('resize', onResize);
     darkMq.removeEventListener('change', onSchemeFlip);
     for (const t of pendingTimers) clearTimeout(t);

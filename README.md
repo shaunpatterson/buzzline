@@ -77,6 +77,23 @@ pages and the OS dark mode are readable without a separate scheme.
 - **Bumblebee** — near-black / gold / near-black / brown
 - **High contrast** — black / pure blue / black / pure red
 
+## What gets colored
+
+Only long stretches of prose a person reads. Buzzline first finds the page's
+main prose container, then a 17-weight logistic model (`BLOCK_MODEL` in
+`src/core.js`) scores each text block on cheap features — length, link
+density, sentence shape, tag, width/position, and whether its ancestors look
+like metadata, references, ads, sidebars or navigation — and leaves
+low-scoring blocks plain (bylines, captions, citations, link lists).
+
+The model was fit on LLM-labelled blocks from 17 real sites (`tests/e2e`).
+Leave-one-site-out, char-weighted: precision 0.900 → 0.953, recall 0.974 →
+0.958. On 11 sites it never saw: precision 0.928 → 0.982, recall 0.992 → 0.988.
+Refit with `node tests/e2e/train.js` and re-score the unseen sites with
+`node tests/e2e/score_unseen.js`. `tests/e2e/collector.js` is the page-side
+block collector; the committed data holds per-block features and labels only,
+never page text.
+
 ## Known limitations
 
 - Per-character spans on very long articles (10k+ characters) use measurable
@@ -101,6 +118,7 @@ src/sprint.js          RSVP reader overlay (ORP-aligned word flashing)
 src/content.css        Base CSS + launcher + Sprint overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, live preview)
 tests/core.test.js     Unit tests for core.js (`node --test`)
+tests/e2e/             Block collector, labelled dataset and model trainer
 icons/                 Extension icons (cropped from assets/logo.png)
 scripts/gen_icons.py   Regenerates the icons (Pillow)
 ```
