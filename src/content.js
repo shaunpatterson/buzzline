@@ -640,8 +640,11 @@
       prevChars: 0, nextChars: 0, sibProse: 0
     };
     const chain = [];
+    // Class/id flags stop at the enclosing main/article: page wrappers above it
+    // (body.cafemedia-no-footer-…) say nothing about the block.
+    let pastMain = false;
     for (let e = block; e && e !== document.documentElement; e = e.parentElement) {
-      const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
+      const cls = pastMain ? '' : (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
       if (FEAT_AD.test(cls)) f.ad++;
       if (FEAT_REL.test(cls)) f.rel++;
       if (FEAT_SIDE.test(cls)) f.side++;
@@ -649,7 +652,7 @@
       const t = e.tagName.toLowerCase();
       const role = e.getAttribute('role');
       if (CHROME_TAGS.has(t) || (role && CHROME_ROLES.has(role))) f.chrome++;
-      if (t === 'main' || t === 'article' || role === 'main') f.main++;
+      if (t === 'main' || t === 'article' || role === 'main') { f.main++; pastMain = true; }
       if (chain.length < 6) {
         const c0 = typeof e.className === 'string' && e.className ? e.className.trim().split(/\s+/)[0].slice(0, 18) : '';
         chain.push(t + (e.id ? '#' + e.id.slice(0, 18) : '') + (c0 ? '.' + c0 : ''));
@@ -690,7 +693,7 @@
   // reader comment next to long ones) still count, but only inside a run that
   // reaches the reading length on its own merits. The run itself must
   // contain at least one block the model accepts outright.
-  const NEAR_PROSE = 0.25;
+  const NEAR_PROSE = 0.12;
   let nearMemo = new WeakMap();
   function isReadingCandidate(block) {
     if (isProseBlockEl(block)) return true;

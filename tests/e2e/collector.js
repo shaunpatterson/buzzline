@@ -38,11 +38,13 @@
     // Lexical features come from core.js (the harness injects src/core.js first).
     const tf = window.BuzzlineCore.textFeatures(text);
     const chain = []; const flags = { ad: 0, rel: 0, side: 0, nav: 0, comment: 0 }; const land = { main: 0, article: 0, nav: 0, aside: 0, header: 0, footer: 0, form: 0 };
+    let pastMain = false;   // class flags stop at main/article, as in content.js
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
-      const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
+      const cls = pastMain ? '' : (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
       for (const k of Object.keys(RX)) if (RX[k].test(cls)) flags[k]++;
       const t = e.tagName.toLowerCase(); if (land[t] !== undefined) land[t]++;
       const role = e.getAttribute('role'); if (role === 'main') land.main++; if (role === 'navigation') land.nav++; if (role === 'complementary') land.aside++; if (role === 'banner') land.header++; if (role === 'contentinfo') land.footer++;
+      if (t === 'main' || t === 'article' || role === 'main') pastMain = true;
       if (chain.length < 6) chain.push(t + (e.id ? '#' + e.id.slice(0, 18) : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/)[0].slice(0, 18) : ''));
     }
     let depth = 0; for (let e = el; e; e = e.parentElement) depth++;
