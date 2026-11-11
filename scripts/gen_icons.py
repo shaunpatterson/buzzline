@@ -23,6 +23,43 @@ CROP = (395, 165, 1025, 775)
 SIZES = (16, 48, 128)
 
 
+def knock_out_background(img: Image.Image, tol: int = 40) -> Image.Image:
+    """Make the near-white background transparent.
+
+    Flood-fills from every border pixel through pixels close to white, so
+    white areas enclosed by the artwork (eyes, speech bubble) stay opaque.
+    Background pixels get alpha proportional to their distance from white,
+    which keeps the anti-aliased outline smooth instead of haloed.
+    """
+    from collections import deque
+
+    w, h = img.size
+    px = img.load()
+    dist = lambda p: max(255 - p[0], 255 - p[1], 255 - p[2])
+    seen = bytearray(w * h)
+    q = deque()
+    for x in range(w):
+        q.append((x, 0)); q.append((x, h - 1))
+    for y in range(h):
+        q.append((0, y)); q.append((w - 1, y))
+    while q:
+        x, y = q.popleft()
+        i = y * w + x
+        if seen[i]:
+            continue
+        seen[i] = 1
+        r, g, b, a = px[x, y]
+        d = dist((r, g, b))
+        if d > tol:
+            continue
+        # fully transparent near pure white, ramping up towards the outline
+        px[x, y] = (r, g, b, int(a * d / tol) if d > 8 else 0)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx]:
+                q.append((nx, ny))
+    return img
+
+
 def main() -> int:
     if not os.path.isfile(LOGO):
         print(f"logo not found: {LOGO}", file=sys.stderr)
@@ -37,7 +74,7 @@ def main() -> int:
     x1 = max(0, min(x1, w))
     y0 = max(0, min(y0, h))
     y1 = max(0, min(y1, h))
-    bee = img.crop((x0, y0, x1, y1))
+    bee = knock_out_background(img.crop((x0, y0, x1, y1)))
 
     for size in SIZES:
         out = bee.resize((size, size), Image.LANCZOS)
