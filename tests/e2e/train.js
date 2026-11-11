@@ -92,7 +92,8 @@ function crossVal(fitter) {
 console.log(`train: ${sites.length} sites / ${train.length} blocks; holdout: ${holdout.size} sites / ${test.length} blocks (char-weighted, thr ${THRESHOLD}, floor ${FLOOR})`);
 console.log('baseline (root pick only)   cv:', fmt(score(train, (r) => r.col)), ' holdout:', fmt(score(test, (r) => r.col)));
 const models = { logistic: fitLogistic };
-if (!quick) models.mlp = (tr) => fitMlp(tr);
+const H = +(process.env.H || 16);
+if (!quick) models.mlp = (tr) => fitMlp(tr, H);
 const results = {};
 for (const [name, fitter] of Object.entries(models)) {
   const cv = crossVal(fitter); const full = fitter(train);
@@ -123,5 +124,5 @@ const m = results[pick].model;
 console.log(`best by CV F0.5: ${pick} @ ${THR}`);
 const out = pick === 'mlp' ? { type: 'mlp', names: NAMES, threshold: THR, minChars: FLOOR, H: m.H, W1: m.W1.map((r) => r.map((v) => +v.toFixed(4))), b1: m.b1.map((v) => +v.toFixed(4)), W2: m.W2.map((v) => +v.toFixed(4)), b2: +m.b2.toFixed(4) }
   : { type: 'logistic', names: NAMES, threshold: THR, minChars: FLOOR, w: m.w.map((v) => +v.toFixed(4)) };
-fs.writeFileSync(path.join(__dirname, 'data', 'model.json'), JSON.stringify(out));
+if (!process.env.NO_WRITE) fs.writeFileSync(path.join(__dirname, 'data', 'model.json'), JSON.stringify(out));
 console.log(`chosen: ${pick} -> data/model.json`);

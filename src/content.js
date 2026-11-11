@@ -245,7 +245,7 @@
     if (isSelfColored(node)) return false;
     // Score the block before splitting: rejected blocks get no char spans at all.
     const block = nearestBlock(node.parentElement);
-    if (!isProseBlockEl(block) || !inReadingRun(block)) return false;
+    if (!isReadingCandidate(block) || !inReadingRun(block)) return false;
     return true;
   };
 
@@ -572,7 +572,7 @@
   let displayMemo = new WeakMap();   // element -> is block-level display
   let statsMemo = new WeakMap();     // block   -> { text, total, link, chars, counts }
   let proseMemo = new WeakMap();     // block   -> bool
-  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); linkMemo = new WeakMap(); runMemo = new WeakMap(); blockOrderRebuilt = false; };
+  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); linkMemo = new WeakMap(); runMemo = new WeakMap(); nearMemo = new WeakMap(); blockOrderRebuilt = false; };
 
   const isBlockLevel = (el) => {
     let v = displayMemo.get(el);
@@ -675,7 +675,7 @@
   // sentences. Headings don't break a run; RUN_GAP_CHARS of non-prose text
   // between two prose blocks (a result title + URL, a card header) does, so
   // isolated snippets on search results, feeds and listings stay plain.
-  const RUN_MIN_CHARS = 500, RUN_MIN_SENTENCES = 5, RUN_GAP_CHARS = 80;
+  const RUN_MIN_CHARS = 500, RUN_MIN_SENTENCES = 5, RUN_GAP_CHARS = 60;
   let blockOrder = null, blockPos = null, blockOrderRoot = null, blockOrderRebuilt = false;
   let runMemo = new WeakMap();
   function buildBlockOrder() {
@@ -686,11 +686,27 @@
     blockOrder = order; blockPos = pos; blockOrderRoot = contentRoot;
   }
   const sentencesOf = (b) => (blockStats(b).text.match(SENTENCE_END_RX) || []).length;
+  // Hysteresis: blocks scoring a little under the model threshold (a short
+  // reader comment next to long ones) still count, but only inside a run that
+  // reaches the reading length on its own merits. The run itself must
+  // contain at least one block the model accepts outright.
+  const NEAR_PROSE = 0.25;
+  let nearMemo = new WeakMap();
+  function isReadingCandidate(block) {
+    if (isProseBlockEl(block)) return true;
+    let v = nearMemo.get(block);
+    if (v === undefined) {
+      v = block !== document.body && hasBox(block) && blockStats(block).chars >= globalThis.BuzzlineCore.BLOCK_MODEL.minChars &&
+          globalThis.BuzzlineCore.blockScore(blockFeatures(block)) > NEAR_PROSE;
+      nearMemo.set(block, v);
+    }
+    return v;
+  }
   function inReadingRun(block) {
     let v = runMemo.get(block);
     if (v !== undefined) return v;
-    let chars = blockStats(block).chars, sents = sentencesOf(block);
-    const enough = () => chars >= RUN_MIN_CHARS && sents >= RUN_MIN_SENTENCES;
+    let chars = blockStats(block).chars, sents = sentencesOf(block), strong = isProseBlockEl(block);
+    const enough = () => chars >= RUN_MIN_CHARS && sents >= RUN_MIN_SENTENCES && strong;
     if (!enough()) {
       // Rebuild the order when the root changed, or once per pass on a miss
       // (new content); stale entries are skipped via isConnected.
@@ -703,9 +719,18 @@
           let gap = 0;
           for (let j = i + dir; j >= 0 && j < blockOrder.length && !enough(); j += dir) {
             const b = blockOrder[j];
-            if (!b.isConnected || isHeading(b)) continue;
-            if (isProseBlockEl(b)) { chars += blockStats(b).chars; sents += sentencesOf(b); gap = 0; }
-            else if ((gap += blockStats(b).chars) >= RUN_GAP_CHARS) break;
+            if (!b.isConnected) continue;
+            // A heading that is itself a link (a search-result or card title)
+            // separates runs; ordinary section headings don't.
+            if (isHeading(b)) { if (inLink(b) && (gap += blockStats(b).chars) >= RUN_GAP_CHARS) break; continue; }
+            if (isReadingCandidate(b)) { chars += blockStats(b).chars; sents += sentencesOf(b); strong = strong || isProseBlockEl(b); gap = 0; }
+            else {
+              // Short metadata rows (usernames, "Score: 5 votes", timestamps)
+              // and quoted sentences are neutral; only substantive link or
+              // label text (result titles, URLs, card headers) separates runs.
+              const st = blockStats(b);
+              if ((st.link / Math.max(1, st.total) >= 0.5 || (st.chars >= 40 && sentencesOf(b) === 0)) && (gap += st.chars) >= RUN_GAP_CHARS) break;
+            }
           }
         }
       }
