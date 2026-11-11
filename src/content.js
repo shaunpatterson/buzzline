@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, META_RX, PROMO_RX, PROMO_WINDOW, SENTENCE_END_RX } = globalThis.BuzzlineCore;
+  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, META_RX, textFeatures, SENTENCE_END_RX } = globalThis.BuzzlineCore;
 
   const LAUNCHER_ATTR = 'data-bzln-launcher';
   const GRAD_ATTR = 'data-bzln-grad';
@@ -630,7 +630,7 @@
       chars: s.chars,
       words: text ? text.split(' ').length : 0,
       sentences: (text.match(SENTENCE_END_RX) || []).length,
-      promo: PROMO_RX.test(text.slice(0, PROMO_WINDOW)) ? 1 : 0,
+      ...textFeatures(text),   // promo, digitFrac, upperFrac, puncFrac, avgWordLen, price, dateish, endsColon
       linkFrac: s.link / Math.max(1, s.total),
       tag: block.tagName.toLowerCase(),
       wFrac: rect.width / vw,

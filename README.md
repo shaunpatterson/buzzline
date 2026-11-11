@@ -57,9 +57,6 @@ Colours come from `::highlight()` rules, which win over the page's own text
 colour and are not subject to page CSP. Requires Chrome 105+, Firefox 140+ or
 Safari 17.2+; without the Highlight API Buzzline stays inactive.
 
-Text is split on grapheme clusters via `Intl.Segmenter`, so emoji, flags,
-and ZWJ sequences stay intact.
-
 ## Sprint (RSVP reader)
 
 Every colored block gets a small yellow launcher icon at its start. Click
@@ -96,31 +93,36 @@ pages and the OS dark mode are readable without a separate scheme.
 ## What gets colored
 
 Only long stretches of prose a person reads. Buzzline first finds the page's
-main prose container, then a 20-weight logistic model (`BLOCK_MODEL` in
-`src/core.js`) scores each text block *before* it is split into spans, on
-cheap features — length, link density, sentence shape, tag, width/position,
-whether its ancestors look like metadata, references, ads, sidebars or
-navigation, how much prose its neighbouring/sibling blocks hold, and
-paywall/newsletter wording. Low-scoring blocks (bylines, captions, citations,
-listing cards, "Updated on …" rows) are left untouched; blocks under 50
-characters are never colored.
+main prose container, then scores each text block *before* colouring with a
+small MLP (`BLOCK_MODEL` in `src/core.js`: 26 features → 16 tanh units → 1,
+about 450 weights) on cheap features — length, link density, sentence shape,
+tag, width/position, whether its ancestors look like metadata, references,
+ads, sidebars or navigation, how much prose its neighbouring/sibling blocks
+hold, and the wording of its first 220 characters (paywall/newsletter
+phrases, prices, dates and "N hours ago", digit/capital/punctuation density).
+Low-scoring blocks (bylines, captions, citations, listing cards, feed titles,
+"requested review … 1 hour ago" rows) are left untouched; blocks under 50
+characters are never coloured. Ad markup (`promoted`, `ad-type`, `data-ad-*`
+attributes, `<*-ad-*>` elements, `rel=sponsored` links) and link-like custom
+elements are recognised directly.
 
-The model was fit on 5.5k LLM-labelled blocks from 82 real sites (news,
-docs, wikis, forums, listings, four languages; `tests/e2e`), with the ~15%
-contested labels re-judged by a stronger model. Char-weighted precision /
-recall of what gets colored, root pick alone → with the model:
+The model was fit on 15.3k LLM-labelled blocks from 250 real sites (news in
+twelve countries, docs, wikis, forums, recipes, shops, listings, feeds), with
+the ~15% contested labels re-judged by a stronger model given the
+neighbouring blocks. 50 sites were never used for fitting. Char-weighted
+precision / recall of what gets coloured (threshold 0.45):
 
-| | precision | recall |
-|---|---|---|
-| leave-one-site-out, 66 training sites | 0.821 / 0.980 → 0.930 / 0.901 |
-| 16 sites never used for fitting | 0.830 / 0.923 → 0.972 / 0.902 |
+| | root pick only | logistic (26 w) | **MLP (shipped)** |
+|---|---|---|---|
+| 5-fold CV by site, 200 sites | 0.814 / 0.973 | 0.925 / 0.919 | **0.951 / 0.887** |
+| 50 held-out sites | 0.841 / 0.935 | 0.975 / 0.893 | **0.982 / 0.881** |
 
-Known misses: paywall / subscribe paragraphs on some news sites still pass
-(they are structurally real paragraphs), and slideshow-style listicles whose
-body text sits in `*-caption` containers are under-colored. Refit with
-`node tests/e2e/train.js`; `tests/e2e/collector.js` is the page-side block
-collector; the committed data holds per-block features and labels only, never
-page text. Blocks you mark "should / shouldn't be colored" from the popup are
+The MLP was chosen by precision-weighted F0.5 on cross-validation: wrong
+colouring is what readers notice. Remaining misses on the held-out sites are
+short promo paragraphs (podcast plugs, comment disclaimers) that read like
+prose. Refit with `node tests/e2e/train.js && node scripts/embed_model.js`;
+`tests/e2e/collector.js` is the page-side block collector; the committed
+data holds per-block features and labels only, never page text. Blocks you mark "should / shouldn't be colored" from the popup are
 stored locally (features only) and can be exported from Settings to grow the
 dataset.
 

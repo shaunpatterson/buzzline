@@ -72,12 +72,15 @@ test('ensureContrast lifts every palette colour to 4.5:1 on mid-tone surfaces an
   assert.deepEqual(ensureContrast(light, null), light, 'unknown background: untouched');
 });
 
-test('promo wording lowers the prose score; CJK sentence terminators count', () => {
-  const { blockScore, SENTENCE_END_RX } = require('../src/core.js');
+test('promo wording lowers the prose score; text-derived features match explicit ones; CJK terminators count', () => {
+  const { blockScore, textFeatures, SENTENCE_END_RX } = require('../src/core.js');
   const base = { chars: 150, words: 25, sentences: 3, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'p', wFrac: 0.5, cx: 0.5, prevChars: 0, nextChars: 0, sibProse: 0.5 };
-  assert.ok(blockScore({ ...base, promo: 0 }) - blockScore({ ...base, promo: 1 }) > 0.1, 'promo flag costs at least 0.1');
-  assert.equal(blockScore({ ...base, promo: undefined, text: 'Subscribe to continue reading.' }), blockScore({ ...base, promo: 1 }), 'promo derived from text');
-  assert.equal(('ミツバチは花の蜜を集める。働き蜂は巣を守る！' .match(SENTENCE_END_RX) || []).length, 2);
+  const plain = textFeatures('The committee met on three occasions to discuss the proposal and its consequences for the region.');
+  const promo = textFeatures('Subscribe to continue reading. Get unlimited access to all our journalism for one low monthly price.');
+  assert.ok(blockScore({ ...base, ...plain }) > blockScore({ ...base, ...promo }), 'promo paragraph scores lower than plain prose');
+  const text = 'Subscribe to continue reading.';
+  assert.equal(blockScore({ ...base, text }), blockScore({ ...base, ...textFeatures(text) }), 'features derived from text');
+  assert.equal(('ミツバチは花の蜜を集める。働き蜂は巣を守る！'.match(SENTENCE_END_RX) || []).length, 2);
   assert.equal(('end. Next'.match(SENTENCE_END_RX) || []).length, 1);
   assert.equal(('Done!" She left'.match(SENTENCE_END_RX) || []).length, 1);
 });
