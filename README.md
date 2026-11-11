@@ -122,6 +122,19 @@ page text. Blocks you mark "should / shouldn't be colored" from the popup are
 stored locally (features only) and can be exported from Settings to grow the
 dataset.
 
+## Performance
+
+Work is per block, nearest-to-viewport first: ~60 ms synchronously at
+injection, then `requestIdleCallback` slices (~12 ms; 24 blocks split per
+slice so each slice pays one relayout). On pages with more than 400 prose
+blocks only blocks within two screens are split at all; the rest stay as
+plain text until you scroll towards them, so the DOM (and relayout cost)
+stays bounded however long the page is. Measured in headless Chromium,
+longest main-thread block at injection: GitHub README 58 ms, HN thread
+79 ms, Wikipedia *Honey bee* 96 ms, Wikipedia *Roman Empire* 126 ms, a 720k-
+character Gutenberg novel 58 ms (was 3.1 s). Viewport text is coloured
+within ~10 ms of injection.
+
 ## Known limitations
 
 - Per-character spans on very long articles (10k+ characters) use measurable

@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{font:16px/1.5 sans-serif;max-width:800px;margin:40px auto}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.comment{border:1px solid #ddd;padding:12px;margin:12px 0}
+.event{color:#555;margin:8px 0}
+.post{border-bottom:1px solid #eee;padding:12px 0}
+</style></head><body>
+<main>
+<!-- Reddit-style feed: titles are custom link elements, not <a> -->
+<div id="feed">
+  <shreddit-ad-post class="promotedlink block relative" promoted="" ad-type="display" id="ad">
+    <delegated-link url="https://alb.reddit.com/cr?x" slot="full-post-link"><faceplate-screen-reader-content><span class="sr">Advertisement: With the full context of your business, ChatGPT can help teams make better decisions and get more done.</span></faceplate-screen-reader-content></delegated-link>
+    <div slot="credit-bar"><span>u/OpenAI</span> <span>Ad</span></div>
+    <div slot="title"><div class="headline"><delegated-link url="https://alb.reddit.com/cr?x" click-location="title">With the full context of your business, ChatGPT can help teams make better decisions and get more done.</delegated-link></div></div>
+    <div class="ad-link-bar"><delegated-link url="https://alb.reddit.com/cr?x">chatgpt.com</delegated-link> <delegated-link url="https://alb.reddit.com/cr?x">Sign Up</delegated-link></div>
+  </shreddit-ad-post>
+  <shreddit-post class="post" id="post1">
+    <span>r/SipsTea • 11 hr. ago • Join</span>
+    <div slot="title"><delegated-link url="/r/SipsTea/comments/abc/">Was this covered by insurance? Here is a long enough title to pass any floor.</delegated-link></div>
+  </shreddit-post>
+  <shreddit-post class="post" id="post2">
+    <span>r/NewsSource • 2 days ago • Join</span>
+    <div slot="title"><delegated-link url="/r/NewsSource/comments/def/">Trump Asked Who Should Succeed Him. Here's What He Said</delegated-link></div>
+    <delegated-link url="https://www.newsweek.com/trump-asked-who-should-succeed-him">https://www.newsweek.com/trump-asked-who-should-succeed-him-what-he-said-1234567</delegated-link>
+  </shreddit-post>
+</div>
+<!-- GitHub-style PR timeline -->
+<div id="timeline">
+  <div class="comment" id="c1"><p>This is a genuine review comment with several sentences of real prose. It explains the reasoning behind the change, references the failing test, and asks the author to confirm that the regression test covers the empty-input case as well as the overflow case.</p></div>
+  <div class="event" id="ev1"><strong><a href="/shaun">Shaun Patterson (shaunpatterson)</a></strong> requested review from <strong><a href="/bruno">Bruno Leme (brunotitanbankingai)</a></strong>, <strong><a href="/isaac">Isaac Kabuika (isaac-titan)</a></strong> and <strong><a href="/kiru">Kirushanth S (kirushanths)</a></strong> as <a href="/owners">code owners</a> <a href="#ts">1 hour ago</a></div>
+  <div class="event" id="ev2"><strong>New changes since you last viewed</strong> <a class="btn" href="/changes">View changes</a></div>
+  <div class="comment" id="c2"><p>Second comment, also real prose. The approach looks right to me; the only thing I would change is the error message, which should mention the configuration key so that an operator can find it without reading the source code.</p></div>
+</div>
+</main>
+</body></html>

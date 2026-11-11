@@ -17,7 +17,6 @@
   // Inline code is part of the sentence when reading aloud/RSVP; only <pre>
   // blocks are skipped for extraction. Colouring still skips all of SKIP_TAGS.
   const INLINE_CODE_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR', 'TT']);
-  const LINKISH = 'a, button, label, summary';
   const MIN_BLOCK_PROSE = 40;   // chars of non-link text for a block to count
   const MIN_PAGE_PROSE = 200;   // below this the page has no prose body
   const DOMINANCE = 0.75;       // child must hold this share to narrow the root
@@ -80,8 +79,23 @@
     if (id) {
       for (const t of tokensOf(id)) if (NON_CONTENT_TOKENS.has(t)) return true;
     }
+    // Ad markup that class tokens miss: custom elements (<shreddit-ad-post>,
+    // <amp-ad>), promoted/sponsored attributes, Google/Reddit ad data-attrs.
+    if (el.hasAttribute('promoted') || el.hasAttribute('sponsored') || el.hasAttribute('ad-type') ||
+        el.hasAttribute('data-ad') || el.hasAttribute('data-ad-slot') || el.hasAttribute('data-ad-client') ||
+        el.hasAttribute('data-ad-unit')) return true;
+    const tag = el.tagName.toLowerCase();
+    if (tag.includes('-') && /(^|-)(ad|ads|advert|advertisement|promoted|sponsored)(-|$)/.test(tag)) return true;
+    if (tag === 'a' && /\bsponsored\b/.test(el.rel || '')) return true;
     return false;
   };
+
+  // Link-like elements. Besides <a>, sites wrap titles in custom elements
+  // (Reddit's <delegated-link>, role="link" divs) whose real anchor lives in
+  // shadow DOM; their text is navigation, not prose.
+  const LINKISH_SEL = 'a, button, label, summary, [role="link"], [role="button"], [href], [url]';
+  const isLinkish = (el) => !!el && el.nodeType === 1 && (el.matches(LINKISH_SEL) || (el.tagName.includes('-') && /link|button/i.test(el.tagName)));
+  const inLink = (el) => { for (let e = el; e; e = e.parentElement) if (isLinkish(e)) return true; return false; };
 
   const state = { enabled: false, scheme: 'classic', disabledHosts: [], siteSchemes: {}, linkUnderline: true };
   const currentHost = (location.hostname || '').toLowerCase();
@@ -190,7 +204,7 @@
     const memo = colorMemo.get(start);
     if (memo !== undefined) return memo;
     let result = false;
-    if (!start.closest('a')) {
+    if (!inLink(start)) {
       const chain = [];
       let p = start;
       while (p && p !== document.body && !isBlockDisplay(p)) { chain.push(p); p = p.parentElement; }
@@ -242,18 +256,236 @@
     node.parentNode.replaceChild(frag, node);
   }
 
+  // ---------- Incremental pipeline ----------
+  // Work is per block. processRoot() only *finds* prose blocks and queues
+  // them; pump() splits them into char spans and colours them, nearest to the
+  // viewport first, synchronously under a small budget and then in idle
+  // slices, so the main thread is never blocked for long on huge pages.
+  const SYNC_BUDGET_MS = 60;      // first paint: how long we may block
+  const SLICE_MS = 12;            // idle slices after that
+  const NEAR_PX = () => (window.innerHeight || 800) * 1.5;
+  const pending = new Map();      // block -> text nodes to split (null = already split, needs colour)
+  const painted = new Set();      // blocks that currently hold char spans
+  let pumpHandle = null;
+  let passCache = null;           // per colouring pass caches (see beginPass)
+
+  function beginPass() {
+    const scheme = SCHEMES[effectiveScheme()] || SCHEMES.classic;
+    passCache = {
+      palettes: { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) },
+      blockByParent: new Map(), verticalByBlock: new Map(), bgByEl: new Map(), paletteByBlock: new Map()
+    };
+  }
+
   function processRoot(root) {
     if (!root) return;
     if (root.nodeType === 1 && (isCharSpan(root) || skipElement(root) || isNonContent(root))) return;
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
-      { acceptNode: (n) => acceptTextNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
+      // Cheap pre-filter only; the real checks (classifier, self-colour, skip
+      // ancestors) run per block in splitBlock, inside the time slices.
+      { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && !isCharSpan(n.parentElement) && inContentRoot(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
     );
-    const batch = [];
     let n;
-    while ((n = walker.nextNode())) batch.push(n);
-    for (const tn of batch) splitTextNode(tn);
+    while ((n = walker.nextNode())) {
+      const block = nearestBlock(n.parentElement);
+      const cur = pending.get(block);
+      // null = block already split and queued for colour; new text in it still
+      // needs splitting (splitting is idempotent: char spans are never accepted).
+      if (cur) cur.push(n); else { pending.set(block, [n]); markQueueChanged(); }
+    }
+  }
+
+  // Queue one accepted text node (mutation path) for splitting + colouring.
+  function queueTextNode(n) {
+    const block = nearestBlock(n.parentElement);
+    const cur = pending.get(block);
+    if (cur === null) { pending.set(block, [n]); markQueueChanged(); return; }   // re-split: new text in a painted block
+    if (cur) cur.push(n); else { pending.set(block, [n]); markQueueChanged(); }
+  }
+
+  // Split all queued text nodes of a block into char spans.
+  function splitBlock(block) {
+    const nodes = pending.get(block);
+    if (nodes) for (const tn of nodes) if (tn.isConnected && acceptTextNode(tn)) splitTextNode(tn);
+    pending.set(block, null);
+    painted.add(block);
+  }
+
+  const distanceToViewport = (block) => {
+    const r = block.getBoundingClientRect();
+    const vh = window.innerHeight || 800;
+    if (r.bottom < 0) return -r.bottom;
+    if (r.top > vh) return r.top - vh;
+    return 0;
+  };
+
+  // Colour one block: group its own char spans into visual lines, then write
+  // --bzln-c. Reads (rects, computed styles) happen before any write.
+  function colourBlock(block) {
+    const C = passCache;
+    const getBlock = (el) => {
+      const parent = el.parentElement;
+      if (!parent) return document.body;
+      const cached = C.blockByParent.get(parent);
+      if (cached !== undefined) return cached;
+      const b = nearestBlock(parent);
+      C.blockByParent.set(parent, b);
+      return b;
+    };
+    const isVertical = (b) => {
+      const cached = C.verticalByBlock.get(b);
+      if (cached !== undefined) return cached;
+      const wm = (getComputedStyle(b).writingMode || '').toLowerCase();
+      const v = wm.startsWith('vertical') || wm.startsWith('sideways');
+      C.verticalByBlock.set(b, v);
+      return v;
+    };
+    if (isVertical(block)) return false;
+    const palette = paletteFor(block);
+    const lines = [];
+    let current = null, lastTop = null;
+    for (const span of block.querySelectorAll(`span[${CHAR_ATTR}]`)) {
+      if (getBlock(span) !== block) continue;   // belongs to a nested block
+      const rect = span.getBoundingClientRect();
+      if (!rect.width && !rect.height) continue;
+      const top = rect.top;
+      const heightGuard = Math.max(1, rect.height);
+      if (!current || lastTop === null || Math.abs(top - lastTop) > heightGuard * 0.6) {
+        current = { spans: [], rects: [] };
+        lines.push(current);
+      }
+      current.spans.push(span);
+      current.rects.push(rect);
+      lastTop = top;
+    }
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      const start = palette[li % palette.length];
+      const end = palette[(li + 1) % palette.length];
+      const firstLeft = line.rects[0].left;
+      const lastRight = line.rects[line.rects.length - 1].right;
+      const width = Math.max(1, lastRight - firstLeft);
+      for (let i = 0; i < line.spans.length; i++) {
+        const r = line.rects[i];
+        const t = Math.max(0, Math.min(1, ((r.left + r.right) / 2 - firstLeft) / width));
+        line.spans[i].style.setProperty('--bzln-c', rgbStr(mix(start, end, t)));
+      }
+    }
+    return lines.length > 0;
+  }
+
+  // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
+  function surfaceBg(el) {
+    if (!el) return null;
+    const C = passCache;
+    if (C.bgByEl.has(el)) return C.bgByEl.get(el);
+    const c = parseCssColor(getComputedStyle(el).backgroundColor);
+    const v = c && c.a >= 0.5 ? c : surfaceBg(el.parentElement);
+    C.bgByEl.set(el, v);
+    return v;
+  }
+  function paletteFor(block) {
+    const C = passCache;
+    let p = C.paletteByBlock.get(block);
+    if (!p) {
+      // Gradient leaves are painted with color:transparent; ignore that.
+      const tc = parseCssColor(getComputedStyle(block).color);
+      const bg = surfaceBg(block);
+      const dark = isDarkSurface(bg, tc && tc.a > 0 ? tc : null);
+      // Mid-tone surfaces (grey cards, tinted callouts) can leave either
+      // variant below 4.5:1; nudge lightness only as far as needed.
+      p = ensureContrast(dark ? C.palettes.dark : C.palettes.light, bg);
+      C.paletteByBlock.set(block, p);
+    }
+    return p;
+  }
+
+  // Drain `pending` nearest-first until the budget is spent; reschedule the
+  // rest as idle work. When the queue empties, mount launchers and gradients.
+  let order = [];               // pending blocks, nearest-first; rebuilt when stale
+  let orderStale = true;
+  const markQueueChanged = () => { orderStale = true; };
+  const BATCH = 24;             // blocks split per slice before measuring (one relayout per slice)
+  const BIG_PAGE_BLOCKS = 400;  // above this, far blocks stay unsplit until scrolled near
+  const stale = new Set();      // painted blocks whose colour is out of date (big pages)
+  function pump(budgetMs) {
+    const t0 = performance.now();
+    if (orderStale) {
+      for (const b of pending.keys()) if (!b.isConnected) { pending.delete(b); painted.delete(b); stale.delete(b); }
+      const scored = [...pending.keys()].map((b) => [distanceToViewport(b), b]).sort((a, b) => a[0] - b[0]);
+      // Huge pages: keep the DOM (and every relayout) small by only splitting
+      // blocks within reach of the viewport; the rest wait in `pending` for
+      // onScroll to bring them into range.
+      const far = scored.length > BIG_PAGE_BLOCKS ? NEAR_PX() * 2 : Infinity;
+      order = scored.filter((x) => x[0] <= far).map((x) => x[1]);
+      orderStale = false;
+    }
+    while (order.length) {
+      if (performance.now() - t0 > budgetMs) break;
+      // Phase 1: DOM writes (splitting) for a batch. Phase 2: reads + colour
+      // writes. Interleaving split and measure would force a relayout per block.
+      const batch = [];
+      while (order.length && batch.length < BATCH) {
+        const block = order.shift();
+        if (!pending.has(block)) continue;
+        if (pending.get(block) !== null) splitBlock(block);
+        batch.push(block);
+      }
+      for (const block of batch) {
+        if (!colourBlock(block)) painted.delete(block);
+        pending.delete(block);
+      }
+    }
+    if (order.length) schedulePump();
+    else finishPass();              // everything in range is done; far blocks wait for scroll
+  }
+  function schedulePump() {
+    if (pumpHandle !== null) return;
+    const run = () => { pumpHandle = null; if (state.enabled && mo) pump(SLICE_MS); };
+    pumpHandle = window.requestIdleCallback ? requestIdleCallback(run, { timeout: 250 }) : setTimeout(run, 16);
+  }
+  function cancelPump() {
+    if (pumpHandle === null) return;
+    if (window.requestIdleCallback) cancelIdleCallback(pumpHandle); else clearTimeout(pumpHandle);
+    pumpHandle = null;
+  }
+  function finishPass() {
+    syncLaunchers(painted);
+    applyGradientBlocks(paletteFor);
+  }
+
+  // Full (re)colour: everything that has spans gets re-measured. Nearest
+  // blocks are done synchronously within SYNC_BUDGET_MS, the rest in idle
+  // time. On big pages only blocks near the viewport are re-queued; the rest
+  // are marked stale and picked up as the user scrolls towards them.
+  function applyColors() {
+    colorMemo = new WeakMap();
+    resetBlockMemos();
+    ensureRoot();
+    beginPass();
+    const big = painted.size > BIG_PAGE_BLOCKS;
+    const near = NEAR_PX() * 2;
+    for (const b of painted) {
+      if (pending.has(b)) continue;
+      if (big && distanceToViewport(b) > near) stale.add(b); else { pending.set(b, null); stale.delete(b); }
+    }
+    markQueueChanged();
+    cancelPump();
+    pump(SYNC_BUDGET_MS);
+  }
+  let scrollTimer = null;
+  function onScroll() {
+    if ((!stale.size && !pending.size) || scrollTimer) return;
+    scrollTimer = setTimeout(() => {
+      scrollTimer = null;
+      if (!state.enabled || !mo) return;
+      const near = NEAR_PX();
+      let added = 0;
+      for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.set(b, null); added++; } }
+      if (added || pending.size) { markQueueChanged(); schedulePump(); }
+    }, 150);
   }
 
   function unprocessAll() {
@@ -271,6 +503,11 @@
     const grad = document.querySelectorAll(`[${GRAD_ATTR}]`);
     for (const el of grad) clearGradientStyle(el);
     closeReader();
+    cancelPump();
+    pending.clear();
+    painted.clear();
+    stale.clear();
+    markQueueChanged();
   }
 
   function clearGradientStyle(el) {
@@ -331,7 +568,7 @@
       }
       if (skip) continue;
       s.text += v; s.total += v.length;
-      if (p.closest('a')) s.link += v.length;
+      if (inLink(p)) s.link += v.length;
     }
     s.text = s.text.replace(/\s+/g, ' ').trim();
     s.chars = s.text.length;
@@ -391,140 +628,19 @@
     return f;
   }
 
+  // Blocks with no real box (sr-only, clipped, collapsed) are never prose.
+  const hasBox = (b) => { const r = b.getBoundingClientRect(); return r.width >= 20 && r.height >= 8; };
+
   // Is this block long-form prose a person reads? Memoised per pass.
   function isProseBlockEl(block) {
     let v = proseMemo.get(block);
     if (v === undefined) {
-      v = block !== document.body && isProseBlock(blockFeatures(block));
+      v = block !== document.body && hasBox(block) && isProseBlock(blockFeatures(block));
       proseMemo.set(block, v);
     }
     return v;
   }
 
-  function applyColors() {
-    const scheme = SCHEMES[effectiveScheme()] || SCHEMES.classic;
-    const palettes = { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) };
-    colorMemo = new WeakMap();
-    resetBlockMemos();
-    ensureRoot();
-    const spans = document.querySelectorAll(`span[${CHAR_ATTR}]`);
-    if (!spans.length) return;
-
-    // Per-run caches scoped to one apply call. Keyed by parentElement,
-    // which is stable within a run and shared by most sibling char spans —
-    // collapses tens of thousands of getComputedStyle calls into a few.
-    const blockByParent = new Map();
-    const verticalByBlock = new Map();
-
-    const getBlock = (el) => {
-      const parent = el.parentElement;
-      if (!parent) return document.body;
-      const cached = blockByParent.get(parent);
-      if (cached !== undefined) return cached;
-      let p = parent;
-      while (p && p !== document.body) {
-        const d = getComputedStyle(p).display;
-        if (d && d !== 'inline' && d !== 'inline-block' && d !== 'contents') break;
-        p = p.parentElement;
-      }
-      const block = p || document.body;
-      blockByParent.set(parent, block);
-      return block;
-    };
-
-    const isVertical = (block) => {
-      const cached = verticalByBlock.get(block);
-      if (cached !== undefined) return cached;
-      const wm = (getComputedStyle(block).writingMode || '').toLowerCase();
-      const v = wm.startsWith('vertical') || wm.startsWith('sideways');
-      verticalByBlock.set(block, v);
-      return v;
-    };
-
-    // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
-    const bgByEl = new Map();
-    const paletteByBlock = new Map();
-    const surfaceBg = (el) => {
-      if (!el) return null;
-      if (bgByEl.has(el)) return bgByEl.get(el);
-      const c = parseCssColor(getComputedStyle(el).backgroundColor);
-      const v = c && c.a >= 0.5 ? c : surfaceBg(el.parentElement);
-      bgByEl.set(el, v);
-      return v;
-    };
-    const paletteFor = (block) => {
-      let p = paletteByBlock.get(block);
-      if (!p) {
-        // Gradient leaves are painted with color:transparent; ignore that.
-        const tc = parseCssColor(getComputedStyle(block).color);
-        const bg = surfaceBg(block);
-        const dark = isDarkSurface(bg, tc && tc.a > 0 ? tc : null);
-        // Mid-tone surfaces (grey cards, tinted callouts) can leave either
-        // variant below 4.5:1; nudge lightness only as far as needed.
-        p = ensureContrast(dark ? palettes.dark : palettes.light, bg);
-        paletteByBlock.set(block, p);
-      }
-      return p;
-    };
-
-    // Group spans into visual lines. Skip vertical writing-mode blocks —
-    // our top/left heuristic doesn't map to their flow direction.
-    const lines = [];
-    let current = null;
-    let lastTop = null;
-    let lastBlock = null;
-
-    for (let i = 0; i < spans.length; i++) {
-      const span = spans[i];
-      const rect = span.getBoundingClientRect();
-      if (!rect.width && !rect.height) continue;
-      const block = getBlock(span);
-      if (isVertical(block)) continue;
-      const top = rect.top;
-      const heightGuard = Math.max(1, rect.height);
-      const lineBreak =
-        !current ||
-        block !== lastBlock ||
-        lastTop === null ||
-        Math.abs(top - lastTop) > heightGuard * 0.6;
-      if (lineBreak) {
-        current = { spans: [], rects: [] };
-        lines.push(current);
-      }
-      current.spans.push(span);
-      current.rects.push(rect);
-      lastTop = top;
-      lastBlock = block;
-    }
-
-    // Resolve every line's palette in a read-only pass so getComputedStyle
-    // never interleaves with the style.setProperty writes below.
-    const linePalettes = lines.map((l) => l.spans.length ? paletteFor(getBlock(l.spans[0])) : null);
-
-    const blocks = new Set();
-    for (let li = 0; li < lines.length; li++) {
-      const line = lines[li];
-      if (!line.spans.length) continue;
-      const palette = linePalettes[li];
-      const start = palette[li % palette.length];
-      const end = palette[(li + 1) % palette.length];
-      const firstLeft = line.rects[0].left;
-      const lastRight = line.rects[line.rects.length - 1].right;
-      const width = Math.max(1, lastRight - firstLeft);
-      for (let i = 0; i < line.spans.length; i++) {
-        const r = line.rects[i];
-        const center = (r.left + r.right) / 2;
-        const t = Math.max(0, Math.min(1, (center - firstLeft) / width));
-        const c = mix(start, end, t);
-        // Write to a custom property; content.css reads it via var().
-        line.spans[i].style.setProperty('--bzln-c', rgbStr(c));
-      }
-      blocks.add(getBlock(line.spans[0]));
-    }
-
-    syncLaunchers(blocks);
-    applyGradientBlocks(paletteFor);
-  }
 
   // Safe-mode gradient for contenteditable blocks (Notion, Google Docs-like
   // editors). We can't insert char spans into a CE subtree — the editor's
@@ -691,20 +807,7 @@
       }
       return v;
     };
-    const blockCache = new Map();
-    const blockOf = (parent) => {
-      const cached = blockCache.get(parent);
-      if (cached) return cached;
-      let p = parent;
-      while (p && p !== document.body) {
-        const d = getComputedStyle(p).display;
-        if (d && d !== 'inline' && d !== 'inline-block' && d !== 'contents') break;
-        p = p.parentElement;
-      }
-      const block = p || document.body;
-      blockCache.set(parent, block);
-      return block;
-    };
+    const blockOf = nearestBlock;   // shares displayMemo with the rest of the pipeline
     const visCache = new Map();
     const rendered = (b) => {
       let v = visCache.get(b);
@@ -758,7 +861,7 @@
       if (!el) return false;
       let v = linkCache.get(el);
       if (v === undefined) {
-        v = el.matches(LINKISH) || linkish(el.parentElement);
+        v = isLinkish(el) || linkish(el.parentElement);
         linkCache.set(el, v);
       }
       return v;
@@ -1012,13 +1115,15 @@
               }
             } else if (node.nodeType === 3) {
               ours = false;
-              if (acceptTextNode(node)) splitTextNode(node);
+              if (acceptTextNode(node)) queueTextNode(node);
             } else {
               ours = false;
             }
           }
           for (const node of m.removedNodes) {
             if (node.nodeType === 1 && (isCharSpan(node) || isLauncher(node))) continue;
+            // splitTextNode replaces a text node with char spans: that is ours too.
+            if (node.nodeType === 3 && m.addedNodes.length && [...m.addedNodes].every(isCharSpan)) continue;
             ours = false;
           }
           // External structural change may alter line wrapping — recolor.
@@ -1028,7 +1133,7 @@
         } else if (m.type === 'characterData') {
           const target = m.target;
           if (target.nodeType === 3 && acceptTextNode(target)) {
-            splitTextNode(target);
+            queueTextNode(target);
             structureChanged = true;
           }
         }
@@ -1063,6 +1168,7 @@
     });
     rootMo.observe(document.documentElement, { childList: true });
     window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, { passive: true });
     darkMq.addEventListener('change', onSchemeFlip);
     applyLinkStyle();
     // Late layout shifts (webfonts, images) change line wrapping after the
@@ -1073,6 +1179,7 @@
 
   function disable() {
     if (mo) { mo.disconnect(); mo = null; }
+    cancelPump();
     if (rootMo) { rootMo.disconnect(); rootMo = null; }
     observedBody = null;
     contentRoot = null;
@@ -1081,6 +1188,8 @@
     rootRetryTimer = null;
     rootPeers = [];
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('scroll', onScroll);
+    if (scrollTimer) { clearTimeout(scrollTimer); scrollTimer = null; }
     darkMq.removeEventListener('change', onSchemeFlip);
     document.documentElement.classList.remove(LINK_CLASS);
     for (const t of pendingTimers) clearTimeout(t);

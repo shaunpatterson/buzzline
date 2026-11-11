@@ -98,6 +98,32 @@
   const PROMO_RX = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i;
   // Sentence terminators incl. CJK full-width forms.
   const SENTENCE_END_RX = /[.!?]["')\]]?(\s|$)|[。！？]/g;
+  // Cheap lexical features of a block, all computed on the first TEXT_WINDOW
+  // chars (that is what the training data stores). Catches metadata-ish text
+  // the structural features miss: prices, dates, ALL-CAPS labels, "Updated 3
+  // days ago", "Name:" rows, number-heavy tables.
+  const TEXT_WINDOW = 220;
+  const PRICE_RX = /[$€£¥]\s?\d|\d\s?(?:USD|EUR|GBP)\b|\b\d+(?:\.\d+)?%\s?off\b/i;
+  const DATEISH_RX = /\b(?:\d+\s+(?:second|minute|hour|day|week|month|year)s?\s+ago|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?:\s+\d{4})?|(?:mon|tues|wednes|thurs|fri|satur|sun)day|updated|published|posted|\d{4}-\d{2}-\d{2})\b/i;
+  const textFeatures = (text) => {
+    const s = (text || '').slice(0, TEXT_WINDOW);
+    const letters = (s.match(/\p{L}/gu) || []).length;
+    const upper = (s.match(/\p{Lu}/gu) || []).length;
+    const digits = (s.match(/\p{N}/gu) || []).length;
+    const punct = (s.match(/[^\p{L}\p{N}\s]/gu) || []).length;
+    const words = s.trim() ? s.trim().split(/\s+/) : [];
+    return {
+      promo: PROMO_RX.test(s) ? 1 : 0,
+      digitFrac: digits / Math.max(1, s.length),
+      upperFrac: upper / Math.max(1, letters),
+      puncFrac: punct / Math.max(1, s.length),
+      avgWordLen: Math.min(12, words.reduce((a, w) => a + w.length, 0) / Math.max(1, words.length)) / 12,
+      price: PRICE_RX.test(s) ? 1 : 0,
+      dateish: DATEISH_RX.test(s) ? 1 : 0,
+      endsColon: /:\s*$/.test(s) && s.length < TEXT_WINDOW ? 1 : 0
+    };
+  };
+
   const BLOCK_MODEL = {
     threshold: 0.4,
     minChars: 50,   // hard floor: shorter blocks are never "long stretches of text"
@@ -129,7 +155,7 @@
   };
   const isProseBlock = (f) => f.chars >= BLOCK_MODEL.minChars && blockScore(f) > BLOCK_MODEL.threshold;
 
-  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, META_RX, PROMO_RX, PROMO_WINDOW, SENTENCE_END_RX };
+  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, META_RX, PROMO_RX, PROMO_WINDOW, TEXT_WINDOW, textFeatures, SENTENCE_END_RX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineCore = api;
 })();

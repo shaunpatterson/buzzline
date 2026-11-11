@@ -21,7 +21,7 @@
     const b = blockOf(p);
     let r = blocks.get(b); if (!r) { r = { el: b, text: '', link: 0, coloured: 0, total: 0 }; blocks.set(b, r); }
     const v = n.nodeValue; r.text += v; r.total += v.length;
-    if (p.closest('a')) r.link += v.length;
+    if (p.closest('a, button, label, summary, [role="link"], [role="button"], [href], [url]') || [...(function* (e) { for (; e; e = e.parentElement) yield e; })(p)].some(e => e.tagName.includes('-') && /link|button/i.test(e.tagName))) r.link += v.length;
     if (p.hasAttribute('data-bzln') && p.style.getPropertyValue('--bzln-c')) r.coloured += v.length;
   }
   const out = [];
@@ -33,7 +33,8 @@
     const cs = getComputedStyle(el);
     const words = text.split(' ').length;
     const sentences = (text.match(/[.!?]["')\]]?(\s|$)|[。！？]/g) || []).length;
-    const promo = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i.test(text.slice(0, 220)) ? 1 : 0;
+    // Lexical features come from core.js (the harness injects src/core.js first).
+    const tf = window.BuzzlineCore.textFeatures(text);
     const chain = []; const flags = { ad: 0, rel: 0, side: 0, nav: 0, comment: 0 }; const land = { main: 0, article: 0, nav: 0, aside: 0, header: 0, footer: 0, form: 0 };
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
@@ -45,7 +46,7 @@
     let depth = 0; for (let e = el; e; e = e.parentElement) depth++;
     const rec = { el, link: r.link / Math.max(1, r.total), row: out.length };
     recs.push(rec);
-    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, promo, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
+    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, ...tf, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
       cx: +(((rect.left + rect.right) / 2) / vw).toFixed(3), wFrac: +(rect.width / vw).toFixed(3), left: +(rect.left / vw).toFixed(3), y: +(((rect.top + scrollY) / docH)).toFixed(3), h: Math.round(rect.height),
       fs: parseFloat(cs.fontSize) || 0, depth, ...Object.fromEntries(Object.entries(flags).map(([k, v]) => ['f_' + k, v])), ...Object.fromEntries(Object.entries(land).map(([k, v]) => ['l_' + k, v])),
       coloured: +(r.coloured / Math.max(1, r.total)).toFixed(3), chain: chain.reverse().join('>'), text: text.slice(0, 220) });
