@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, PROMO_RX, SENTENCE_END_RX, ENDS_PUNCT_RX } = globalThis.BuzzlineCore;
+  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, META_RX, PROMO_RX, PROMO_WINDOW, SENTENCE_END_RX } = globalThis.BuzzlineCore;
 
   const CHAR_ATTR = 'data-bzln';
   const LAUNCHER_ATTR = 'data-bzln-launcher';
@@ -353,8 +353,7 @@
       chars: s.chars,
       words: text ? text.split(' ').length : 0,
       sentences: (text.match(SENTENCE_END_RX) || []).length,
-      endsPunct: ENDS_PUNCT_RX.test(text),
-      promo: PROMO_RX.test(text) ? 1 : 0,
+      promo: PROMO_RX.test(text.slice(0, PROMO_WINDOW)) ? 1 : 0,
       linkFrac: s.link / Math.max(1, s.total),
       tag: block.tagName.toLowerCase(),
       wFrac: rect.width / vw,
@@ -835,8 +834,8 @@
     return blocks;
   }
 
-  function sprintPage() {
-    const sel = String(window.getSelection() || '').replace(/\s+/g, ' ').trim();
+  function sprintPage(given) {
+    const sel = String(given || window.getSelection() || '').replace(/\s+/g, ' ').trim();
     const text = sel || extractAllBlocks().join(' ');
     if (text && typeof window.__bzlnSprint === 'function') {
       window.__bzlnSprint(text);
@@ -1115,7 +1114,7 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) return;
     console.log('[Buzzline] message received:', msg.type);
-    if (msg.type === 'sprint-page') sprintPage();
+    if (msg.type === 'sprint-page') sprintPage(msg.text);
     else if (msg.type === 'open-reader') openReader();
     else if (msg.type === 'feedback') recordFeedback(msg.verdict);
   });
@@ -1131,8 +1130,9 @@
     if (!el) return;
     resetBlockMemos();
     const block = nearestBlock(el);
-    const { chain, ...f } = blockFeatures(block);
-    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: !!block.querySelector(`span[${CHAR_ATTR}]`), score: +globalThis.BuzzlineCore.blockScore(blockFeatures(block)).toFixed(3), meta: /caption|meta|author|footer|byline|cite|reference/i.test(chain) ? 1 : 0, f };
+    const full = blockFeatures(block);
+    const { chain, ...f } = full;
+    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: !!block.querySelector(`span[${CHAR_ATTR}]`), score: +globalThis.BuzzlineCore.blockScore(full).toFixed(3), meta: META_RX.test(chain) ? 1 : 0, f };
     chrome.storage.local.get(['feedback'], (s) => {
       const list = Array.isArray(s.feedback) ? s.feedback : [];
       list.push(entry);

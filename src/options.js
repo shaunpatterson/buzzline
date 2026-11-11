@@ -179,7 +179,8 @@ document.getElementById('feedback-export').addEventListener('click', () => {
     a.href = URL.createObjectURL(blob);
     a.download = `buzzline-feedback-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    // Revoking synchronously can race the download; let it start first.
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
 });
 document.getElementById('feedback-clear').addEventListener('click', () => {

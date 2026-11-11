@@ -33,7 +33,7 @@
     const cs = getComputedStyle(el);
     const words = text.split(' ').length;
     const sentences = (text.match(/[.!?]["')\]]?(\s|$)|[。！？]/g) || []).length;
-    const promo = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i.test(text) ? 1 : 0;
+    const promo = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i.test(text.slice(0, 220)) ? 1 : 0;
     const chain = []; const flags = { ad: 0, rel: 0, side: 0, nav: 0, comment: 0 }; const land = { main: 0, article: 0, nav: 0, aside: 0, header: 0, footer: 0, form: 0 };
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
@@ -45,7 +45,7 @@
     let depth = 0; for (let e = el; e; e = e.parentElement) depth++;
     const rec = { el, link: r.link / Math.max(1, r.total), row: out.length };
     recs.push(rec);
-    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, promo, endsPunct: /[.!?。！？]["')\]]?$/.test(text) ? 1 : 0, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
+    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, promo, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
       cx: +(((rect.left + rect.right) / 2) / vw).toFixed(3), wFrac: +(rect.width / vw).toFixed(3), left: +(rect.left / vw).toFixed(3), y: +(((rect.top + scrollY) / docH)).toFixed(3), h: Math.round(rect.height),
       fs: parseFloat(cs.fontSize) || 0, depth, ...Object.fromEntries(Object.entries(flags).map(([k, v]) => ['f_' + k, v])), ...Object.fromEntries(Object.entries(land).map(([k, v]) => ['l_' + k, v])),
       coloured: +(r.coloured / Math.max(1, r.total)).toFixed(3), chain: chain.reverse().join('>'), text: text.slice(0, 220) });

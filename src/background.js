@@ -25,7 +25,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab) return;
   // The content script's sprint-page handler prefers the current selection
   // when there is one, so both menu entries map to the same message.
-  if (info.menuItemId === MENU_SELECTION || info.menuItemId === MENU_PAGE) send(tab.id, { type: 'sprint-page' });
+  // selectionText also covers selections the content script cannot see
+  // (inside <textarea>/<input> or a sub-frame; the script runs top-frame only).
+  if (info.menuItemId === MENU_SELECTION) send(tab.id, { type: 'sprint-page', text: info.selectionText || '' });
+  else if (info.menuItemId === MENU_PAGE) send(tab.id, { type: 'sprint-page' });
   else if (info.menuItemId === MENU_READER) send(tab.id, { type: 'open-reader' });
 });
 

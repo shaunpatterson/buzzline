@@ -47,9 +47,9 @@ test('every scheme has anchored 4-colour light/dark variants readable on dark su
 
 test('blockScore separates long prose from metadata, references and link chrome', () => {
   const { blockScore, isProseBlock } = require('../src/core.js');
-  const base = { chars: 0, words: 0, sentences: 0, endsPunct: false, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'div', wFrac: 0.5, cx: 0.5 };
-  const prose = { ...base, chars: 420, words: 70, sentences: 4, endsPunct: true, tag: 'p', main: 1, chain: 'p>div.post>article' };
-  const reference = { ...base, chars: 300, words: 40, sentences: 3, endsPunct: true, linkFrac: 0.5, tag: 'li', chain: 'li#cite_note-4>ol.mw-references' };
+  const base = { chars: 0, words: 0, sentences: 0, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'div', wFrac: 0.5, cx: 0.5 };
+  const prose = { ...base, chars: 420, words: 70, sentences: 4, tag: 'p', main: 1, chain: 'p>div.post>article', prevChars: 300, nextChars: 300, sibProse: 1 };
+  const reference = { ...base, chars: 300, words: 40, sentences: 3, linkFrac: 0.5, tag: 'li', chain: 'li#cite_note-4>ol.mw-references' };
   const byline = { ...base, chars: 45, words: 7, sentences: 0, tag: 'div', chain: 'div.dateline>div#abs' };
   const sidebarLinks = { ...base, chars: 90, words: 12, linkFrac: 1, tag: 'li', side: 1, chrome: 1, cx: 0.9, wFrac: 0.2 };
   assert.ok(isProseBlock(prose), 'long paragraph is prose');
@@ -73,10 +73,11 @@ test('ensureContrast lifts every palette colour to 4.5:1 on mid-tone surfaces an
 });
 
 test('promo wording lowers the prose score; CJK sentence terminators count', () => {
-  const { blockScore, SENTENCE_END_RX, ENDS_PUNCT_RX } = require('../src/core.js');
-  const base = { chars: 150, words: 25, sentences: 3, endsPunct: true, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'p', wFrac: 0.5, cx: 0.5, prevChars: 0, nextChars: 0, sibProse: 0.5 };
+  const { blockScore, SENTENCE_END_RX } = require('../src/core.js');
+  const base = { chars: 150, words: 25, sentences: 3, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'p', wFrac: 0.5, cx: 0.5, prevChars: 0, nextChars: 0, sibProse: 0.5 };
   assert.ok(blockScore({ ...base, promo: 0 }) - blockScore({ ...base, promo: 1 }) > 0.1, 'promo flag costs at least 0.1');
   assert.equal(blockScore({ ...base, promo: undefined, text: 'Subscribe to continue reading.' }), blockScore({ ...base, promo: 1 }), 'promo derived from text');
   assert.equal(('ミツバチは花の蜜を集める。働き蜂は巣を守る！' .match(SENTENCE_END_RX) || []).length, 2);
-  assert.ok(ENDS_PUNCT_RX.test('これは文です。'));
+  assert.equal(('end. Next'.match(SENTENCE_END_RX) || []).length, 1);
+  assert.equal(('Done!" She left'.match(SENTENCE_END_RX) || []).length, 1);
 });

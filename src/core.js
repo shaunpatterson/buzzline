@@ -91,35 +91,37 @@
   // (tests/e2e/train.js); 16 sites held out. Input is a plain feature object.
   const META_RX = /(cite|citation|reference|caption|metadata|byline|dateline|author|footer|credit|timestamp|breadcrumb|toc|disclaimer|copyright|modified|meta)/i;
   // Wording typical of paywalls, newsletter/subscribe prompts and promos that
-  // are otherwise structurally identical to body paragraphs.
+  // are otherwise structurally identical to body paragraphs. Tested on the first
+  // PROMO_WINDOW chars only: that is what the training data stored, and promos
+  // announce themselves early.
+  const PROMO_WINDOW = 220;
   const PROMO_RX = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i;
   // Sentence terminators incl. CJK full-width forms.
   const SENTENCE_END_RX = /[.!?]["')\]]?(\s|$)|[。！？]/g;
-  const ENDS_PUNCT_RX = /[.!?。！？]["')\]]?$/;
   const BLOCK_MODEL = {
     threshold: 0.4,
     minChars: 50,   // hard floor: shorter blocks are never "long stretches of text"
-    //   bias   logChars linkFrac sentDens endsPunct meta   ad     rel    side  nav   chrome  main   isP   isLi  isTd  wFrac  edge  nbrLong sibProse promo
-    w: [-3.156, 1.749, -2.246, -0.426, 0.369, -2.539, -0.167, -0.573, 0.185, 0.287, -1.782, -0.273, 2.168, 0.601, -0.193, 0.715, -0.15, 0.992, 1.682, -1.034]
+    //   bias   logChars linkFrac sentDens meta   ad     rel    side  nav   chrome  main   isP   isLi  isTd  wFrac  edge  nbrLong sibProse promo
+    w: [-3.099, 1.717, -2.272, -0.221, -2.541, -0.138, -0.546, 0.183, 0.303, -1.762, -0.272, 2.202, 0.598, -0.198, 0.698, -0.113, 0.977, 1.713, -1.036]
   };
   const sigmoid = (z) => 1 / (1 + Math.exp(-z));
-  // f: { chars, words, sentences, endsPunct, linkFrac, chain (ancestor path; only
+  // f: { chars, words, sentences, linkFrac, chain (ancestor path; only
   //      META_RX matters), ad, rel, side, nav (class/id token hits), chrome
   //      (nav/aside/header/footer ancestors), main (main/article ancestors),
   //      tag, wFrac (width / viewport), cx (horizontal centre / viewport),
   //      prevChars/nextChars (chars of the nearest sibling blocks, 0 if none),
   //      sibProse (share of sibling blocks that are >= 80 chars and < 50% links),
-  //      promo (PROMO_RX wording; or `text` to derive it) }
+  //      promo (PROMO_RX wording in the first PROMO_WINDOW chars; or `text` to derive it) }
   const blockScore = (f) => {
     const x = [
       1, Math.log10(Math.max(1, f.chars)) / 3, f.linkFrac, Math.min(1, (f.sentences / Math.max(1, f.words)) * 10),
-      f.endsPunct ? 1 : 0, (f.meta !== undefined ? f.meta : META_RX.test(f.chain || '')) ? 1 : 0,
+      (f.meta !== undefined ? f.meta : META_RX.test(f.chain || '')) ? 1 : 0,
       f.ad > 0 ? 1 : 0, f.rel > 0 ? 1 : 0, f.side > 0 ? 1 : 0, f.nav > 0 ? 1 : 0,
       f.chrome > 0 ? 1 : 0, f.main > 0 ? 1 : 0,
       f.tag === 'p' ? 1 : 0, f.tag === 'li' ? 1 : 0, (f.tag === 'td' || f.tag === 'th') ? 1 : 0,
       f.wFrac, Math.abs(f.cx - 0.5) * 2,
       Math.log10(1 + Math.max(f.prevChars || 0, f.nextChars || 0)) / 3, f.sibProse || 0,
-      (f.promo !== undefined ? f.promo : PROMO_RX.test(f.text || '')) ? 1 : 0
+      (f.promo !== undefined ? f.promo : PROMO_RX.test((f.text || '').slice(0, PROMO_WINDOW))) ? 1 : 0
     ];
     let z = 0;
     for (let i = 0; i < x.length; i++) z += x[i] * BLOCK_MODEL.w[i];
@@ -127,7 +129,7 @@
   };
   const isProseBlock = (f) => f.chars >= BLOCK_MODEL.minChars && blockScore(f) > BLOCK_MODEL.threshold;
 
-  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, PROMO_RX, SENTENCE_END_RX, ENDS_PUNCT_RX };
+  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, META_RX, PROMO_RX, PROMO_WINDOW, SENTENCE_END_RX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineCore = api;
 })();

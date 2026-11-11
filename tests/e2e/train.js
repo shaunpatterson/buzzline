@@ -6,17 +6,19 @@
 // data/labels.json  "site:i" -> body | related | chrome | ad   (LLM-judged; the
 //                   contested ~15% were re-judged by a stronger model with the
 //                   neighbouring blocks as context)
+// Note: `promo` is tested on the first 220 chars of a block (the stored snippet);
+// src/content.js mirrors that so training and serving agree.
 // data/holdout_sites.json  sites never used for fitting; reported separately
 'use strict';
 const blocks = require('./data/blocks.json');
 const labels = require('./data/labels.json');
 const holdout = new Set(require('./data/holdout_sites.json'));
 
-const NAMES = ['bias', 'logChars', 'linkFrac', 'sentDens', 'endsPunct', 'meta', 'ad', 'rel', 'side', 'nav', 'chrome', 'main', 'isP', 'isLi', 'isTd', 'wFrac', 'edge', 'nbrLong', 'sibProse', 'promo'];
+const NAMES = ['bias', 'logChars', 'linkFrac', 'sentDens', 'meta', 'ad', 'rel', 'side', 'nav', 'chrome', 'main', 'isP', 'isLi', 'isTd', 'wFrac', 'edge', 'nbrLong', 'sibProse', 'promo'];
 // Must stay identical to blockScore() in src/core.js.
 const feat = (b) => [
   1, Math.log10(b.chars) / 3, b.linkFrac, Math.min(1, (b.sentences / Math.max(1, b.words)) * 10),
-  b.endsPunct ? 1 : 0, b.meta ? 1 : 0,
+  b.meta ? 1 : 0,
   b.f_ad > 0 ? 1 : 0, b.f_rel > 0 ? 1 : 0, b.f_side > 0 ? 1 : 0, b.f_nav > 0 ? 1 : 0,
   (b.l_nav + b.l_aside + b.l_header + b.l_footer) > 0 ? 1 : 0, (b.l_main + b.l_article) > 0 ? 1 : 0,
   b.tag === 'p' ? 1 : 0, b.tag === 'li' ? 1 : 0, (b.tag === 'td' || b.tag === 'th') ? 1 : 0,
