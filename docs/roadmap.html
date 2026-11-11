@@ -110,7 +110,7 @@ BeeLine's site sells itself with a with/without timing comparison. A one-page te
 <h3>Platform &amp; performance</h3>
 <div class="card"><h3>Firefox build <span class="tag p2">P2</span></h3>
 MV3 is supported in Firefox; the only known delta is <code>browser.*</code> promises vs <code>chrome.*</code> callbacks and <code>checkVisibility</code> availability. Jiffy and BeeLine both ship there.</div>
-<div class="card"><h3>CSS Custom Highlight API instead of char spans <span class="tag p3">P3 — investigate</span></h3>
+<div class="card"><h3>CSS Custom Highlight API instead of char spans <span class="tag p1">DONE (v0.3)</span></h3>
 <code>CSS.highlights</code> + <code>::highlight()</code> colours ranges without mutating the DOM, which would remove the SPA-reconciler and memory problems listed in Known limitations. Constraint: one colour per named highlight, so a gradient needs ~32 quantised highlight names per line. Prototype on one page before committing.</div>
 <div class="card"><h3>PDF viewer <span class="tag p3">P3</span></h3>
 pdf.js text layer is ordinary DOM; the content script could run on it with a small root rule. Large surface (Chrome's built-in viewer is not scriptable), so gate on demand.</div>

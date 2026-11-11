@@ -22,7 +22,9 @@
     let r = blocks.get(b); if (!r) { r = { el: b, text: '', link: 0, coloured: 0, total: 0 }; blocks.set(b, r); }
     const v = n.nodeValue; r.text += v; r.total += v.length;
     if (p.closest('a, button, label, summary, [role="link"], [role="button"], [href], [url]') || [...(function* (e) { for (; e; e = e.parentElement) yield e; })(p)].some(e => e.tagName.includes('-') && /link|button/i.test(e.tagName))) r.link += v.length;
-    if (p.hasAttribute('data-bzln') && p.style.getPropertyValue('--bzln-c')) r.coloured += v.length;
+    // Colouring uses the Highlight API (no DOM marks); the harness exposes
+    // window.__bzlnIsColoured(textNode) from the content script's state.
+    if (window.__bzlnIsColoured && window.__bzlnIsColoured(n)) r.coloured += v.length;
   }
   const out = [];
   const recs = [];

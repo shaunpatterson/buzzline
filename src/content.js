@@ -3,7 +3,6 @@
 
   const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, META_RX, PROMO_RX, PROMO_WINDOW, SENTENCE_END_RX } = globalThis.BuzzlineCore;
 
-  const CHAR_ATTR = 'data-bzln';
   const LAUNCHER_ATTR = 'data-bzln-launcher';
   const GRAD_ATTR = 'data-bzln-grad';
   const LAUNCHER_MIN_CHARS = 120; // skip captions / tiny labels
@@ -93,9 +92,24 @@
   // Link-like elements. Besides <a>, sites wrap titles in custom elements
   // (Reddit's <delegated-link>, role="link" divs) whose real anchor lives in
   // shadow DOM; their text is navigation, not prose.
-  const LINKISH_SEL = 'a, button, label, summary, [role="link"], [role="button"], [href], [url]';
-  const isLinkish = (el) => !!el && el.nodeType === 1 && (el.matches(LINKISH_SEL) || (el.tagName.includes('-') && /link|button/i.test(el.tagName)));
-  const inLink = (el) => { for (let e = el; e; e = e.parentElement) if (isLinkish(e)) return true; return false; };
+  // Direct checks, not Element.matches(): this runs for every ancestor of
+  // every text node and a selector list showed up as the top CPU cost.
+  const LINK_TAGS = new Set(['A', 'BUTTON', 'LABEL', 'SUMMARY']);
+  let linkMemo = new WeakMap();     // element -> is link-like itself or via an ancestor
+  const isLinkish = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    const t = el.tagName;
+    if (LINK_TAGS.has(t) || el.hasAttribute('href') || el.hasAttribute('url')) return true;
+    const role = el.getAttribute('role');
+    if (role === 'link' || role === 'button') return true;
+    return t.includes('-') && /LINK|BUTTON/.test(t);
+  };
+  const inLink = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    let v = linkMemo.get(el);
+    if (v === undefined) { v = isLinkish(el) || inLink(el.parentElement); linkMemo.set(el, v); }
+    return v;
+  };
 
   const state = { enabled: false, scheme: 'classic', disabledHosts: [], siteSchemes: {}, linkUnderline: true };
   const currentHost = (location.hostname || '').toLowerCase();
@@ -128,9 +142,6 @@
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
   const onSchemeFlip = () => { if (state.enabled) applyColors(); };
 
-  const isCharSpan = (el) =>
-    !!el && el.nodeType === 1 && el.hasAttribute(CHAR_ATTR);
-
   const isLauncher = (el) =>
     !!el && el.nodeType === 1 && el.hasAttribute && el.hasAttribute(LAUNCHER_ATTR);
 
@@ -148,7 +159,6 @@
   const inSkippedAncestor = (node) => {
     let p = node.parentElement;
     while (p) {
-      if (isCharSpan(p)) return true;
       if (skipElement(p)) return true;
       if (isNonContent(p)) return true;
       p = p.parentElement;
@@ -159,6 +169,13 @@
   const inContentRoot = (node) => {
     const p = node.parentElement;
     return !!p && (inRoots(p) || !!p.closest('.bzln-reader-root'));
+  };
+
+  let bigPageMemo = null;        // [root, isBig]
+  const isBigPage = () => {
+    if (!contentRoot) return false;
+    if (!bigPageMemo || bigPageMemo[0] !== contentRoot) bigPageMemo = [contentRoot, contentRoot.textContent.length > BIG_PAGE_CHARS];
+    return bigPageMemo[1];
   };
 
   function ensureRoot() {
@@ -231,29 +248,133 @@
     return true;
   };
 
-  // Segment on grapheme clusters so we never split surrogate pairs, ZWJ
-  // sequences, flag emoji, skin-tone modifiers, or combining marks.
-  const segmenter =
-    (typeof Intl !== 'undefined' && Intl.Segmenter)
-      ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-      : null;
+  // ---------- Highlight-API colouring (no DOM mutation) ----------
+  // Text is coloured with the CSS Custom Highlight API: each visual line is
+  // cut into STEPS runs, each run is a Range registered under a highlight
+  // name that encodes its colour. The page's DOM is never touched, so host
+  // scripts' MutationObservers stay quiet and no relayout is ever forced.
+  const STEPS = 12;                       // colour steps per line
+  const HL_PREFIX = 'bzln-';
+  const hlSheet = new CSSStyleSheet();    // ::highlight() rules, added lazily
+  const hlRules = new Set();
+  const highlights = new Map();           // name -> Highlight
+  const blockRanges = new Map();          // block -> [[name, range], ...]
+  const supportsHighlights = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight === 'function';
+  if (supportsHighlights) document.adoptedStyleSheets = [...document.adoptedStyleSheets, hlSheet];
 
-  const graphemes = (text) =>
-    segmenter
-      ? Array.from(segmenter.segment(text), (s) => s.segment)
-      : Array.from(text); // code-point fallback
-
-  function splitTextNode(node) {
-    const text = node.nodeValue;
-    if (!text) return;
-    const frag = document.createDocumentFragment();
-    for (const ch of graphemes(text)) {
-      const span = document.createElement('span');
-      span.setAttribute(CHAR_ATTR, '');
-      span.textContent = ch;
-      frag.appendChild(span);
+  const colourKey = (c) => `${c.r | 0}-${c.g | 0}-${c.b | 0}`;
+  function highlightFor(color, inLinkRun) {
+    const name = HL_PREFIX + colourKey(color) + (inLinkRun ? '-l' : '');
+    let h = highlights.get(name);
+    if (!h) {
+      h = new Highlight();
+      highlights.set(name, h);
+      CSS.highlights.set(name, h);
+      if (!hlRules.has(name)) {
+        hlRules.add(name);
+        const deco = inLinkRun && state.linkUnderline ? ' text-decoration: underline; text-decoration-color: rgba(128,128,128,0.55);' : '';
+        hlSheet.insertRule(`::highlight(${name}) { color: ${rgbStr(color)};${deco} }`);
+      }
     }
-    node.parentNode.replaceChild(frag, node);
+    return h;
+  }
+  function clearBlock(block) {
+    const rs = blockRanges.get(block);
+    if (rs) for (const [name, r] of rs) { const h = highlights.get(name); if (h) h.delete(r); }
+    blockRanges.delete(block);
+  }
+  function clearAllHighlights() {
+    for (const name of highlights.keys()) CSS.highlights.delete(name);
+    highlights.clear();
+    blockRanges.clear();
+  }
+
+  // Line fragments of one text node: [{ start, end, rect }] by char offset.
+  // Range.getClientRects() gives one box per line box; the char boundary of
+  // each box is found by bisection on a probe range (O(lines * log n) rects).
+  function textFragments(node, range) {
+    const n = node.nodeValue.length;
+    range.selectNodeContents(node);
+    const boxes = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    if (!boxes.length) return [];
+    if (boxes.length === 1) return [{ start: 0, end: n, rect: boxes[0] }];
+    const topOf = (i) => { range.setStart(node, i); range.setEnd(node, i + 1); return range.getBoundingClientRect().top; };
+    const frags = [];
+    let start = 0;
+    for (let k = 1; k < boxes.length; k++) {
+      // first char offset whose box top reaches box k's top
+      const targetTop = boxes[k].top - 0.5;
+      let lo = start + 1, hi = n - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (topOf(mid) >= targetTop) hi = mid; else lo = mid + 1; }
+      frags.push({ start, end: lo, rect: boxes[k - 1] });
+      start = lo;
+    }
+    frags.push({ start, end: n, rect: boxes[boxes.length - 1] });
+    return frags;
+  }
+
+  // Colour one block: fragments of its own text nodes -> visual lines ->
+  // STEPS runs per line, each registered as a Range under a colour highlight.
+  function colourBlock(block) {
+    const C = passCache;
+    const isVertical = (b) => {
+      const cached = C.verticalByBlock.get(b);
+      if (cached !== undefined) return cached;
+      const wm = (getComputedStyle(b).writingMode || '').toLowerCase();
+      const v = wm.startsWith('vertical') || wm.startsWith('sideways');
+      C.verticalByBlock.set(b, v);
+      return v;
+    };
+    clearBlock(block);
+    if (isVertical(block)) return false;
+    const set = blockNodes.get(block);
+    const nodes = set ? [...set].filter((tn) => tn.isConnected && acceptTextNode(tn)) : [];
+    for (const tn of (set || [])) if (!tn.isConnected) set.delete(tn);
+    if (!nodes.length) return false;
+    const palette = paletteFor(block);
+    const probe = document.createRange();
+    // 1) fragments in document order, grouped into visual lines
+    const lines = [];
+    let current = null, lastTop = null;
+    for (const tn of nodes) {
+      const linkRun = inLink(tn.parentElement);
+      for (const f of textFragments(tn, probe)) {
+        const top = f.rect.top, guard = Math.max(1, f.rect.height);
+        if (!current || lastTop === null || Math.abs(top - lastTop) > guard * 0.6) { current = []; lines.push(current); }
+        current.push({ node: tn, start: f.start, end: f.end, rect: f.rect, linkRun });
+        lastTop = top;
+      }
+    }
+    // 2) runs
+    const out = [];
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      const startC = palette[li % palette.length], endC = palette[(li + 1) % palette.length];
+      const left = Math.min(...line.map((f) => f.rect.left));
+      const width = Math.max(1, Math.max(...line.map((f) => f.rect.right)) - left);
+      for (const f of line) {
+        const len = f.end - f.start;
+        if (len <= 0) continue;
+        const x0 = f.rect.left, w = f.rect.width;
+        let runStart = f.start, runStep = -1;
+        for (let i = f.start; i <= f.end; i++) {
+          // position of char i's centre, linear within the fragment
+          const step = i === f.end ? -2 : Math.min(STEPS - 1, Math.max(0, Math.floor(((x0 + w * (i - f.start + 0.5) / len) - left) / width * STEPS)));
+          if (step !== runStep) {
+            if (runStep >= 0 && i > runStart) {
+              const c = mix(startC, endC, (runStep + 0.5) / STEPS);
+              const r = document.createRange(); r.setStart(f.node, runStart); r.setEnd(f.node, i);
+              highlightFor(c, f.linkRun).add(r);
+              out.push([HL_PREFIX + colourKey(c) + (f.linkRun ? '-l' : ''), r]);
+            }
+            runStart = i; runStep = step;
+          }
+        }
+      }
+    }
+    blockRanges.set(block, out);
+    painted.add(block);
+    return lines.length > 0;
   }
 
   // ---------- Incremental pipeline ----------
@@ -261,11 +382,12 @@
   // them; pump() splits them into char spans and colours them, nearest to the
   // viewport first, synchronously under a small budget and then in idle
   // slices, so the main thread is never blocked for long on huge pages.
-  const SYNC_BUDGET_MS = 60;      // first paint: how long we may block
+  const SYNC_BUDGET_MS = 40;      // first paint: how long we may block
   const SLICE_MS = 12;            // idle slices after that
   const NEAR_PX = () => (window.innerHeight || 800) * 1.5;
-  const pending = new Map();      // block -> text nodes to split (null = already split, needs colour)
-  const painted = new Set();      // blocks that currently hold char spans
+  const blockNodes = new Map();   // block -> Set of its queued text nodes
+  const pending = new Set();      // blocks waiting to be (re)coloured
+  const painted = new Set();      // blocks currently carrying highlights
   let pumpHandle = null;
   let passCache = null;           // per colouring pass caches (see beginPass)
 
@@ -279,38 +401,25 @@
 
   function processRoot(root) {
     if (!root) return;
-    if (root.nodeType === 1 && (isCharSpan(root) || skipElement(root) || isNonContent(root))) return;
+    if (root.nodeType === 1 && (skipElement(root) || isNonContent(root))) return;
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
       // Cheap pre-filter only; the real checks (classifier, self-colour, skip
-      // ancestors) run per block in splitBlock, inside the time slices.
-      { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && !isCharSpan(n.parentElement) && inContentRoot(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
+      // ancestors) run per block in colourBlock, inside the time slices.
+      { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && inContentRoot(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
     );
     let n;
-    while ((n = walker.nextNode())) {
-      const block = nearestBlock(n.parentElement);
-      const cur = pending.get(block);
-      // null = block already split and queued for colour; new text in it still
-      // needs splitting (splitting is idempotent: char spans are never accepted).
-      if (cur) cur.push(n); else { pending.set(block, [n]); markQueueChanged(); }
-    }
+    while ((n = walker.nextNode())) queueTextNode(n);
   }
 
-  // Queue one accepted text node (mutation path) for splitting + colouring.
+  // Remember a text node under its block and queue the block for colouring.
   function queueTextNode(n) {
     const block = nearestBlock(n.parentElement);
-    const cur = pending.get(block);
-    if (cur === null) { pending.set(block, [n]); markQueueChanged(); return; }   // re-split: new text in a painted block
-    if (cur) cur.push(n); else { pending.set(block, [n]); markQueueChanged(); }
-  }
-
-  // Split all queued text nodes of a block into char spans.
-  function splitBlock(block) {
-    const nodes = pending.get(block);
-    if (nodes) for (const tn of nodes) if (tn.isConnected && acceptTextNode(tn)) splitTextNode(tn);
-    pending.set(block, null);
-    painted.add(block);
+    let set = blockNodes.get(block);
+    if (!set) { set = new Set(); blockNodes.set(block, set); }
+    set.add(n);
+    if (!pending.has(block)) { pending.add(block); markQueueChanged(); }
   }
 
   const distanceToViewport = (block) => {
@@ -321,60 +430,6 @@
     return 0;
   };
 
-  // Colour one block: group its own char spans into visual lines, then write
-  // --bzln-c. Reads (rects, computed styles) happen before any write.
-  function colourBlock(block) {
-    const C = passCache;
-    const getBlock = (el) => {
-      const parent = el.parentElement;
-      if (!parent) return document.body;
-      const cached = C.blockByParent.get(parent);
-      if (cached !== undefined) return cached;
-      const b = nearestBlock(parent);
-      C.blockByParent.set(parent, b);
-      return b;
-    };
-    const isVertical = (b) => {
-      const cached = C.verticalByBlock.get(b);
-      if (cached !== undefined) return cached;
-      const wm = (getComputedStyle(b).writingMode || '').toLowerCase();
-      const v = wm.startsWith('vertical') || wm.startsWith('sideways');
-      C.verticalByBlock.set(b, v);
-      return v;
-    };
-    if (isVertical(block)) return false;
-    const palette = paletteFor(block);
-    const lines = [];
-    let current = null, lastTop = null;
-    for (const span of block.querySelectorAll(`span[${CHAR_ATTR}]`)) {
-      if (getBlock(span) !== block) continue;   // belongs to a nested block
-      const rect = span.getBoundingClientRect();
-      if (!rect.width && !rect.height) continue;
-      const top = rect.top;
-      const heightGuard = Math.max(1, rect.height);
-      if (!current || lastTop === null || Math.abs(top - lastTop) > heightGuard * 0.6) {
-        current = { spans: [], rects: [] };
-        lines.push(current);
-      }
-      current.spans.push(span);
-      current.rects.push(rect);
-      lastTop = top;
-    }
-    for (let li = 0; li < lines.length; li++) {
-      const line = lines[li];
-      const start = palette[li % palette.length];
-      const end = palette[(li + 1) % palette.length];
-      const firstLeft = line.rects[0].left;
-      const lastRight = line.rects[line.rects.length - 1].right;
-      const width = Math.max(1, lastRight - firstLeft);
-      for (let i = 0; i < line.spans.length; i++) {
-        const r = line.rects[i];
-        const t = Math.max(0, Math.min(1, ((r.left + r.right) / 2 - firstLeft) / width));
-        line.spans[i].style.setProperty('--bzln-c', rgbStr(mix(start, end, t)));
-      }
-    }
-    return lines.length > 0;
-  }
 
   // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
   function surfaceBg(el) {
@@ -407,36 +462,28 @@
   let order = [];               // pending blocks, nearest-first; rebuilt when stale
   let orderStale = true;
   const markQueueChanged = () => { orderStale = true; };
-  const BATCH = 24;             // blocks split per slice before measuring (one relayout per slice)
-  const BIG_PAGE_BLOCKS = 400;  // above this, far blocks stay unsplit until scrolled near
+  const BIG_PAGE_CHARS = 150000; // root text above this: far blocks wait until scrolled near
   const stale = new Set();      // painted blocks whose colour is out of date (big pages)
-  function pump(budgetMs) {
+  function pump(budgetMs, visibleOnly = false) {
     const t0 = performance.now();
     if (orderStale) {
-      for (const b of pending.keys()) if (!b.isConnected) { pending.delete(b); painted.delete(b); stale.delete(b); }
-      const scored = [...pending.keys()].map((b) => [distanceToViewport(b), b]).sort((a, b) => a[0] - b[0]);
-      // Huge pages: keep the DOM (and every relayout) small by only splitting
-      // blocks within reach of the viewport; the rest wait in `pending` for
-      // onScroll to bring them into range.
-      const far = scored.length > BIG_PAGE_BLOCKS ? NEAR_PX() * 2 : Infinity;
-      order = scored.filter((x) => x[0] <= far).map((x) => x[1]);
+      for (const b of pending) if (!b.isConnected) { pending.delete(b); painted.delete(b); stale.delete(b); blockNodes.delete(b); }
+      const scored = [...pending].map((b) => [distanceToViewport(b), b]).sort((a, b) => a[0] - b[0]);
+      // Huge pages: only colour blocks within reach of the viewport (bounded
+      // number of live Ranges); the rest wait in `pending` for onScroll.
+      const far = isBigPage() ? NEAR_PX() * 2 : Infinity;
+      order = scored.filter((x) => x[0] <= far);
       orderStale = false;
     }
     while (order.length) {
       if (performance.now() - t0 > budgetMs) break;
-      // Phase 1: DOM writes (splitting) for a batch. Phase 2: reads + colour
-      // writes. Interleaving split and measure would force a relayout per block.
-      const batch = [];
-      while (order.length && batch.length < BATCH) {
-        const block = order.shift();
-        if (!pending.has(block)) continue;
-        if (pending.get(block) !== null) splitBlock(block);
-        batch.push(block);
-      }
-      for (const block of batch) {
-        if (!colourBlock(block)) painted.delete(block);
-        pending.delete(block);
-      }
+      // Synchronous first pass: stop at the first block outside the viewport;
+      // everything else goes to idle slices.
+      if (visibleOnly && order[0][0] > 0) break;
+      const block = order.shift()[1];
+      if (!pending.has(block)) continue;
+      pending.delete(block);
+      if (!colourBlock(block)) painted.delete(block);
     }
     if (order.length) schedulePump();
     else finishPass();              // everything in range is done; far blocks wait for scroll
@@ -465,15 +512,15 @@
     resetBlockMemos();
     ensureRoot();
     beginPass();
-    const big = painted.size > BIG_PAGE_BLOCKS;
+    const big = isBigPage();
     const near = NEAR_PX() * 2;
     for (const b of painted) {
       if (pending.has(b)) continue;
-      if (big && distanceToViewport(b) > near) stale.add(b); else { pending.set(b, null); stale.delete(b); }
+      if (big && distanceToViewport(b) > near) stale.add(b); else { pending.add(b); stale.delete(b); }
     }
     markQueueChanged();
     cancelPump();
-    pump(SYNC_BUDGET_MS);
+    pump(SYNC_BUDGET_MS, true);
   }
   let scrollTimer = null;
   function onScroll() {
@@ -483,21 +530,13 @@
       if (!state.enabled || !mo) return;
       const near = NEAR_PX();
       let added = 0;
-      for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.set(b, null); added++; } }
+      for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.add(b); added++; } }
       if (added || pending.size) { markQueueChanged(); schedulePump(); }
     }, 150);
   }
 
   function unprocessAll() {
-    // Don't call normalize() — SPA frameworks (React, Vue, Angular) hold
-    // direct references to specific text nodes for reconciliation. Merging
-    // adjacent text nodes breaks them. Leaving them unmerged is harmless.
-    const spans = document.querySelectorAll(`span[${CHAR_ATTR}]`);
-    for (const span of spans) {
-      const parent = span.parentNode;
-      if (!parent) continue;
-      parent.replaceChild(document.createTextNode(span.textContent), span);
-    }
+    if (supportsHighlights) clearAllHighlights();
     const launchers = document.querySelectorAll(`[${LAUNCHER_ATTR}]`);
     for (const l of launchers) l.remove();
     const grad = document.querySelectorAll(`[${GRAD_ATTR}]`);
@@ -507,6 +546,7 @@
     pending.clear();
     painted.clear();
     stale.clear();
+    blockNodes.clear();
     markQueueChanged();
   }
 
@@ -531,7 +571,7 @@
   let displayMemo = new WeakMap();   // element -> is block-level display
   let statsMemo = new WeakMap();     // block   -> { text, total, link, chars, counts }
   let proseMemo = new WeakMap();     // block   -> bool
-  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); };
+  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); linkMemo = new WeakMap(); };
 
   const isBlockLevel = (el) => {
     let v = displayMemo.get(el);
@@ -794,8 +834,7 @@
     el.classList.contains('bzln-sprint-root');
 
   // -> [{ node, block }] for every readable, rendered text node under root.
-  // Whitespace-only nodes are kept: after splitTextNode every grapheme
-  // (including spaces) is its own char span.
+  // Whitespace-only nodes are kept so joined text keeps its word breaks.
   function collectReadable(root) {
     const skipCache = new Map();
     const skipped = (el) => {
@@ -861,7 +900,7 @@
       if (!el) return false;
       let v = linkCache.get(el);
       if (v === undefined) {
-        v = isLinkish(el) || linkish(el.parentElement);
+        v = inLink(el);
         linkCache.set(el, v);
       }
       return v;
@@ -1107,12 +1146,10 @@
           let ours = true;
           for (const node of m.addedNodes) {
             if (node.nodeType === 1) {
-              if (!isCharSpan(node)) {
-                if (!isLauncher(node)) ours = false;
-                if (contentRoot && !isLauncher(node) && !inRoots(node) &&
-                    (node.textContent || '').length >= MIN_PAGE_PROSE) rootStale = true;
-                processRoot(node);
-              }
+              if (!isLauncher(node)) ours = false;
+              if (contentRoot && !isLauncher(node) && !inRoots(node) &&
+                  (node.textContent || '').length >= MIN_PAGE_PROSE) rootStale = true;
+              processRoot(node);
             } else if (node.nodeType === 3) {
               ours = false;
               if (acceptTextNode(node)) queueTextNode(node);
@@ -1121,9 +1158,7 @@
             }
           }
           for (const node of m.removedNodes) {
-            if (node.nodeType === 1 && (isCharSpan(node) || isLauncher(node))) continue;
-            // splitTextNode replaces a text node with char spans: that is ours too.
-            if (node.nodeType === 3 && m.addedNodes.length && [...m.addedNodes].every(isCharSpan)) continue;
+            if (node.nodeType === 1 && isLauncher(node)) continue;
             ours = false;
           }
           // External structural change may alter line wrapping — recolor.
@@ -1149,6 +1184,7 @@
 
   function enable() {
     if (mo) return; // already enabled
+    if (!supportsHighlights) { console.warn('[Buzzline] CSS Custom Highlight API unavailable; colouring disabled'); return; }
     if (!document.body) {
       document.addEventListener('DOMContentLoaded', enable, { once: true });
       return;
@@ -1241,7 +1277,7 @@
     const block = nearestBlock(el);
     const full = blockFeatures(block);
     const { chain, ...f } = full;
-    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: !!block.querySelector(`span[${CHAR_ATTR}]`), score: +globalThis.BuzzlineCore.blockScore(full).toFixed(3), meta: META_RX.test(chain) ? 1 : 0, f };
+    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: painted.has(block), score: +globalThis.BuzzlineCore.blockScore(full).toFixed(3), meta: META_RX.test(chain) ? 1 : 0, f };
     chrome.storage.local.get(['feedback'], (s) => {
       const list = Array.isArray(s.feedback) ? s.feedback : [];
       list.push(entry);
