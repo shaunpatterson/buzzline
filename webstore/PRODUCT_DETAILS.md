@@ -128,6 +128,8 @@ Certifications (tick all three):
 
 ## Before you press Submit
 
+- [ ] Account → Settings: publisher contact email entered **and verified** (click the link Google emails you)
+- [ ] Repo stays public (the privacy policy URL is a GitHub link)
 - [ ] The BeeLine Reader patent question (US 9,026,907, see README "Caveat") is settled
 - [ ] `manifest.json` version bumped if a previous zip was ever uploaded
 - [ ] Zip rebuilt with `node scripts/package.js` after the last code change
