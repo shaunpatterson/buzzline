@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buzzline — proposed features &amp; where it stands</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#666; --border:#ddd; --surface:#f6f6f6; --accent:#1f4fb0; --warn:#b06a00; --ok:#1a7f37; --bad:#b02a2a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa4b2; --border:#30363d; --surface:#161b22; --accent:#7fb7ff; --warn:#f7c948; --ok:#56d364; --bad:#ff9c8a; } }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:980px; margin:0 auto; padding:32px 24px 80px; }
+  h1 { font-size:30px; margin:0 0 4px } h2 { font-size:22px; margin:40px 0 12px; border-bottom:1px solid var(--border); padding-bottom:6px } h3 { font-size:17px; margin:22px 0 8px }
+  .sub { color:var(--muted); margin:0 0 24px }
+  a { color:var(--accent) }
+  table { border-collapse:collapse; width:100%; margin:12px 0 20px; font-size:14.5px }
+  th,td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--border) }
+  th { background:var(--surface); font-weight:600 }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:var(--surface); padding:1px 5px; border-radius:4px }
+  .card { border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin:12px 0; background:var(--surface) }
+  .card h3 { margin-top:0 }
+  .tag { display:inline-block; font-size:11.5px; font-weight:600; letter-spacing:.3px; text-transform:uppercase; padding:2px 7px; border-radius:10px; border:1px solid var(--border); margin-left:6px; vertical-align:middle }
+  .p1 { color:var(--bad); border-color:var(--bad) } .p2 { color:var(--warn); border-color:var(--warn) } .p3 { color:var(--muted) }
+  .have { color:var(--ok) } .miss { color:var(--bad) } .part { color:var(--warn) }
+  .num { font-variant-numeric:tabular-nums; text-align:right }
+  ul { padding-left:22px } li { margin:4px 0 }
+  .small { font-size:13.5px; color:var(--muted) }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px } @media (max-width:700px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<main>
+<h1>Buzzline — proposed features &amp; where it stands</h1>
+<p class="sub">Survey of comparable tools, an honest read on the current block model, and a prioritised list of additions. November 2026.</p>
+
+<h2>1. Where it stands today</h2>
+<table>
+<tr><th>Area</th><th>Current state</th></tr>
+<tr><td>What gets coloured</td><td>Main prose container (reader-mode style root pick) + a 17-weight logistic block model that drops bylines, captions, citation lists and link farms. Headings and self-coloured labels are skipped.</td></tr>
+<tr><td>Light / dark</td><td><span class="have">Already automatic.</span> Every scheme has a light and a dark variant; the variant is chosen <em>per text block</em> from the block's real computed background (nearest opaque ancestor, luminance &lt; 0.18 ⇒ dark), falling back to the text colour. Recolours live when the OS <code>prefers-color-scheme</code> flips. The popup preview follows the OS too.</td></tr>
+<tr><td>Sprint (RSVP)</td><td>ORP-aligned word flashing, selection-aware, reads inline code, never flashes lone punctuation, one play button per heading section, 150–900 WPM.</td></tr>
+<tr><td>Reader overlay</td><td>Extracts the same content root as Sprint; coloured in-overlay.</td></tr>
+<tr><td>Robustness</td><td>Survives <code>&lt;body&gt;</code> swaps (Turbo / SPA), re-picks the root when big prose lands late, peer comment regions join the root.</td></tr>
+<tr><td>Testing</td><td><code>node --test</code> (5 unit tests); <code>tests/e2e</code> harness: Chromium + per-block collector + LLM judge + reproducible trainer.</td></tr>
+</table>
+
+<h2>2. Is the model trained on enough data?</h2>
+<div class="card">
+<h3>Short answer: enough for 17 weights, not enough sites.</h3>
+<ul>
+<li><strong>Samples per weight is fine.</strong> 932 labelled blocks for 17 weights ≈ 55 per weight, with L2 regularisation. A logistic model this small cannot overfit much on block count.</li>
+<li><strong>Site diversity is the real limit.</strong> 17 training sites, 11 unseen. Several features (<code>meta</code>, <code>chrome</code>, <code>side</code>) are class-name flags that one or two sites dominate. Leave-one-site-out shows it: Wikipedia alone drops to <strong>0.77 precision</strong> held-out because no other training site has a reference list that looks like Wikipedia's.</li>
+<li><strong>Labels are LLM-judged, not human-judged.</strong> Spot reads found systematic noise: fully-linked teaser cards (BBC, Vox, <code>link=1</code>) labelled as body text. The model is partly trained toward those errors.</li>
+<li><strong>Reference point:</strong> Chrome's on-device Reading Mode model is a 241k-parameter GNN trained on ~100k hand-labelled nodes. Buzzline doesn't need that, but 17 sites is two orders of magnitude thinner on layout variety.</li>
+</ul>
+<table>
+<tr><th>Metric (char-weighted)</th><th class="num">Before model</th><th class="num">With model</th></tr>
+<tr><td>Leave-one-site-out, 17 sites — precision / recall</td><td class="num">0.900 / 0.974</td><td class="num">0.953 / 0.958</td></tr>
+<tr><td>11 unseen sites — precision / recall</td><td class="num">0.928 / 0.992</td><td class="num">0.982 / 0.988</td></tr>
+</table>
+<p><strong>Recommendation:</strong> grow to <strong>60–100 sites / 3–5k blocks</strong> (the collector is already reusable), human-verify ~300 contested labels (anything with <code>link ≥ 0.9</code> or <code>chars &lt; 80</code>), and add <em>two contextual features</em> — "previous/next block passes" and "share of sibling blocks that are prose" — which fix most remaining short-teaser false positives without per-site rules. Keep it a single logistic layer; it is 1 ms per page and ships inline.</p>
+</div>
+
+<h2>3. Comparable tools</h2>
+<table>
+<tr><th>Tool</th><th>Approach</th><th>Notable features Buzzline lacks</th><th>Notes</th></tr>
+<tr><td><a href="https://en.wikipedia.org/wiki/BeeLine_Reader">BeeLine Reader</a></td><td>Per-character colour gradient, end-of-line colour = start of next line</td><td>Suppresses the page's own link colours (underlines links instead); PDF viewer; Kindle Cloud Reader support; iOS app; Firefox</td><td>Patented (US 9,026,907 — see README caveat). Freemium: 5 uses/day free, criticised for paywalling a disability tool. Chrome store rating 2.8.</td></tr>
+<tr><td><a href="https://github.com/ansh/bionic-reading">Jiffy Reader</a> / Bionify</td><td>Bold the first few letters of each word ("bionic")</td><td>Keyboard toggle (<code>Alt+B</code>); saccade intensity + fixation sliders; bookmarklet; Firefox/Opera/Edge builds</td><td>Open source (GPL-3). Different technique, but a <em>combinable</em> one — gradient + bold prefixes is a cheap experiment.</td></tr>
+<tr><td><a href="https://chromewebstore.google.com/detail/sprint-reader-speed-readi/kejhpkmainjkpiablnfdppneidnkhdif">Sprint Reader</a></td><td>RSVP on selected text (right-click menu)</td><td>Context-menu entry; words-per-slide chunk size; automatic language detection; hyphenation of long words; adjustable font; separate comma / period / paragraph delays</td><td>Open source, 20k users, 4.5★. Buzzline's Sprint already has ORP + punctuation holds; chunking and context menu are the gaps.</td></tr>
+<tr><td><a href="https://reedy-reader.com/">Reedy</a></td><td>Regular / speed / text-to-speech modes in one reader</td><td>TTS read-along; epub/fb2 input; saved reading position</td><td>Mobile-first. TTS read-along pairs naturally with the existing Reader overlay.</td></tr>
+<tr><td>SwiftRead</td><td>RSVP + TTS</td><td>Reads PDFs, Kindle Cloud Reader and Libby</td><td>Shows demand for the PDF / ebook surfaces.</td></tr>
+<tr><td>Browser reader modes</td><td>Firefox <a href="https://github.com/mozilla/readability">Readability.js</a> (heuristic DOM scoring); Chrome Reading Mode (<a href="https://research.google/blog/on-device-content-distillation-with-graph-neural-networks/">on-device GNN</a>, 241k params)</td><td>Headline / date / image classes, 12-language eval</td><td>Buzzline's root pick is Readability-like; the block model is a tiny version of Chrome's node classifier. Readability.js could serve as a labelling oracle for cheap extra training data.</td></tr>
+</table>
+
+<h2>4. Proposed additions</h2>
+<p class="small">P1 = fixes a visible failure or a correctness gap · P2 = clear value, moderate work · P3 = nice-to-have / investigate first</p>
+
+<h3>Accuracy &amp; model</h3>
+<div class="card"><h3>Expand the dataset + contextual features <span class="tag p1">P1</span></h3>
+60–100 sites via the existing collector, LLM labels with human verification of contested blocks, two neighbour-aware features. Target: no held-out site under 0.90 precision. Refit is <code>node tests/e2e/train.js</code>.</div>
+<div class="card"><h3>"Wrong?" feedback button → local label export <span class="tag p2">P2</span></h3>
+A tiny control in the popup: "this shouldn't be coloured" / "this should be". Stores the block's feature vector + verdict in <code>chrome.storage.local</code> (never text), exportable as JSON straight into <code>tests/e2e/data</code>. Turns every user into a labeller without telemetry.</div>
+<div class="card"><h3>Readability.js as a second opinion <span class="tag p3">P3</span></h3>
+Run Readability's scoring offline over the collected pages and use agreement / disagreement with the LLM judge to find label noise. Not shipped in the extension.</div>
+<div class="card"><h3>Score before splitting <span class="tag p2">P2</span></h3>
+Today rejected blocks are still split into char spans and then left plain. Scoring in <code>processRoot</code> before <code>splitTextNode</code> would avoid thousands of needless spans on reference-heavy pages (Wikipedia: ~80k spans).</div>
+
+<h3>Light / dark &amp; colour</h3>
+<div class="card"><h3>Contrast-guaranteed variants instead of two fixed palettes <span class="tag p2">P2</span></h3>
+Right now a block is either "light" or "dark". Mid-tone surfaces (grey cards, tinted callouts, hero images) can land both variants below WCAG 4.5:1. Proposal: keep the two anchor palettes, but nudge each colour's lightness toward the surface's opposite until <code>contrastRatio ≥ 4.5</code>. <code>core.js</code> already has <code>contrastRatio</code>; this is ~20 lines.</div>
+<div class="card"><h3>Manual override: Auto / Force light / Force dark <span class="tag p3">P3</span></h3>
+For pages whose computed background is a gradient or image (<code>parseCssColor</code> returns null, so detection falls back to text colour). A per-site remembered override in the popup covers the few cases auto gets wrong.</div>
+<div class="card"><h3>Link colour suppression (BeeLine parity) <span class="tag p2">P2</span></h3>
+Links inside prose currently keep the gradient but the page's underline/colour may fight it. Option to neutralise link colour inside coloured blocks and show links by underline only. Must not touch self-coloured status labels (already skipped).</div>
+<div class="card"><h3>Gradient intensity slider <span class="tag p3">P3</span></h3>
+Mix each palette toward the block's own text colour by 0–100%. Lets people who find full colour loud keep a subtle guide.</div>
+
+<h3>Reading features</h3>
+<div class="card"><h3>Context-menu "Sprint selection" + keyboard shortcuts <span class="tag p1">P1</span></h3>
+<code>contextMenus</code> permission + <code>commands</code> in the manifest: right-click → Sprint, <code>Alt+B</code> toggle colouring, <code>Alt+S</code> Sprint page. Selection-aware Sprint already exists; this just exposes it where Sprint Reader users expect it.</div>
+<div class="card"><h3>Sprint chunking (1–3 words per flash) + per-punctuation delays <span class="tag p2">P2</span></h3>
+<code>tokenizeWords</code> already folds punctuation; grouping N tokens per slide and exposing the comma / period / paragraph multipliers as settings is small work in <code>sprint.js</code>.</div>
+<div class="card"><h3>Text-to-speech read-along in the Reader overlay <span class="tag p2">P2</span></h3>
+<code>speechSynthesis</code> is built into Chrome; highlight the paragraph being spoken. The Reader already has clean paragraphs to feed it.</div>
+<div class="card"><h3>Bold-prefix ("bionic") mode as an optional layer <span class="tag p3">P3</span></h3>
+Buzzline already owns a span per grapheme, so bolding the first ⌈n/3⌉ letters of each word is a CSS class flip. Worth an A/B with the reading-speed test below.</div>
+<div class="card"><h3>Reading-speed self-test <span class="tag p3">P3</span></h3>
+BeeLine's site sells itself with a with/without timing comparison. A one-page test in <code>options.html</code> (two matched passages, timed, comprehension question) gives users their own number.</div>
+
+<h3>Platform &amp; performance</h3>
+<div class="card"><h3>Firefox build <span class="tag p2">P2</span></h3>
+MV3 is supported in Firefox; the only known delta is <code>browser.*</code> promises vs <code>chrome.*</code> callbacks and <code>checkVisibility</code> availability. Jiffy and BeeLine both ship there.</div>
+<div class="card"><h3>CSS Custom Highlight API instead of char spans <span class="tag p3">P3 — investigate</span></h3>
+<code>CSS.highlights</code> + <code>::highlight()</code> colours ranges without mutating the DOM, which would remove the SPA-reconciler and memory problems listed in Known limitations. Constraint: one colour per named highlight, so a gradient needs ~32 quantised highlight names per line. Prototype on one page before committing.</div>
+<div class="card"><h3>PDF viewer <span class="tag p3">P3</span></h3>
+pdf.js text layer is ordinary DOM; the content script could run on it with a small root rule. Large surface (Chrome's built-in viewer is not scriptable), so gate on demand.</div>
+
+<h3>Settings &amp; polish</h3>
+<div class="card"><h3>Per-site memory <span class="tag p2">P2</span></h3>
+Remember scheme, intensity and light/dark override per hostname (already keyed storage for <code>disabledHosts</code>; extend the shape).</div>
+<div class="card"><h3>Popup: live block count + "why isn't this coloured?" <span class="tag p3">P3</span></h3>
+Show the picked root and number of coloured blocks; a debug toggle that outlines rejected blocks with their model score. Would have shortened every "doesn't work here" report in this project.</div>
+
+<h2>5. Suggested order</h2>
+<ol>
+<li>Dataset expansion + contextual features (the model is the thing users notice).</li>
+<li>Context menu + shortcuts (one afternoon, closes the biggest UX gap vs Sprint Reader).</li>
+<li>Contrast-guaranteed palettes (finishes the dark-mode story on mid-tone surfaces).</li>
+<li>Score-before-split (perf on heavy pages) and link colour suppression.</li>
+<li>Feedback button, Sprint chunking, TTS, Firefox.</li>
+<li>Investigate the Highlight API; everything else as demand appears.</li>
+</ol>
+<p class="small">Sources: BeeLine (Wikipedia, Chrome Web Store), Jiffy Reader (GitHub), Sprint Reader (Chrome Web Store listing), Reedy (reedy-reader.com), Google Research "On-device content distillation with graph neural networks" (Sept 2023), mozilla/readability. Numbers in §2 are from <code>tests/e2e/train.js</code> and <code>tests/e2e/score_unseen.js</code> in this repo.</p>
+</main>
+</body>
+</html>
