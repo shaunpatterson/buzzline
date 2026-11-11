@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, isProseBlock } = globalThis.BuzzlineCore;
+  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast, isProseBlock, PROMO_RX, SENTENCE_END_RX, ENDS_PUNCT_RX } = globalThis.BuzzlineCore;
 
   const CHAR_ATTR = 'data-bzln';
   const LAUNCHER_ATTR = 'data-bzln-launcher';
@@ -83,10 +83,16 @@
     return false;
   };
 
-  const state = { enabled: false, scheme: 'classic', disabledHosts: [] };
+  const state = { enabled: false, scheme: 'classic', disabledHosts: [], siteSchemes: {}, linkUnderline: true };
   const currentHost = (location.hostname || '').toLowerCase();
   const isHostDisabled = () =>
     Array.isArray(state.disabledHosts) && state.disabledHosts.includes(currentHost);
+  // Per-site scheme override wins over the global scheme.
+  const effectiveScheme = () => state.siteSchemes[currentHost] || state.scheme;
+  const LINK_CLASS = 'bzln-neutral-links';
+  const applyLinkStyle = () => {
+    document.documentElement.classList.toggle(LINK_CLASS, !!mo && state.linkUnderline);
+  };
   let mo = null;
   let rootMo = null;
   let observedBody = null;
@@ -206,6 +212,8 @@
     if (!inContentRoot(node)) return false;
     if (inSkippedAncestor(node)) return false;
     if (isSelfColored(node)) return false;
+    // Score the block before splitting: rejected blocks get no char spans at all.
+    if (!isProseBlockEl(nearestBlock(node.parentElement))) return false;
     return true;
   };
 
@@ -274,28 +282,85 @@
     el.style.removeProperty('color');
   }
 
-  // Raw features for core's blockScore. `s` holds the block's own text, accumulated
-  // from its char spans: { text, total (raw chars), link (raw chars inside <a>) }.
+  // ---------- Block prose classifier (runs BEFORE splitting into char spans) ----------
+  // Memos live for one pass (reset at the top of applyColors and on every
+  // mutation batch), so a block is scored once per pass, not once per text node.
   const FEAT_AD = /(^|[\s_-])(ad|ads|advert|advertisement|sponsor|sponsored|promo|promoted|outbrain|taboola)($|[\s_-])/i;
   const FEAT_REL = /(related|recommend|trending|popular|most-read|mostread|more-stories|newsletter|subscribe|signup|follow|share|social|cookie|consent|breadcrumb)/i;
   const FEAT_SIDE = /(sidebar|aside|rail|widget)/i;
   const FEAT_NAV = /(^|[\s_-])(nav|navbar|menu|header|masthead|footer|toolbar|tabs?)($|[\s_-])/i;
   const CHROME_TAGS = new Set(['nav', 'aside', 'header', 'footer']);
   const CHROME_ROLES = new Set(['navigation', 'complementary', 'banner', 'contentinfo']);
-  function blockFeatures(block, s) {
-    const text = s.text.replace(/\s+/g, ' ').trim();
+  let displayMemo = new WeakMap();   // element -> is block-level display
+  let statsMemo = new WeakMap();     // block   -> { text, total, link, chars, counts }
+  let proseMemo = new WeakMap();     // block   -> bool
+  const resetBlockMemos = () => { displayMemo = new WeakMap(); statsMemo = new WeakMap(); proseMemo = new WeakMap(); };
+
+  const isBlockLevel = (el) => {
+    let v = displayMemo.get(el);
+    if (v === undefined) {
+      const d = getComputedStyle(el).display;
+      v = !!d && d !== 'inline' && d !== 'inline-block' && d !== 'contents';
+      displayMemo.set(el, v);
+    }
+    return v;
+  };
+  // Nearest block-level ancestor-or-self (body if none).
+  const nearestBlock = (el) => {
+    let p = el;
+    while (p && p !== document.body && !isBlockLevel(p)) p = p.parentElement;
+    return p || document.body;
+  };
+
+  // The block's OWN text (text nodes whose nearest block is this block), raw
+  // and link char counts, and whether it "counts" as a sibling for the
+  // contextual features: visible, >= 30 chars, non-trivial box. Same
+  // definitions as tests/e2e/collector.js.
+  function blockStats(block) {
+    let s = statsMemo.get(block);
+    if (s) return s;
+    s = { text: '', total: 0, link: 0, chars: 0, counts: false };
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walker.nextNode())) {
+      const v = n.nodeValue; if (!v) continue;
+      const p = n.parentElement; if (!p || nearestBlock(p) !== block) continue;
+      let skip = false;
+      for (let e = p; e && e !== block; e = e.parentElement) {
+        if ((SKIP_TAGS.has(e.tagName) && !INLINE_CODE_TAGS.has(e.tagName)) || isLauncher(e)) { skip = true; break; }
+      }
+      if (skip) continue;
+      s.text += v; s.total += v.length;
+      if (p.closest('a')) s.link += v.length;
+    }
+    s.text = s.text.replace(/\s+/g, ' ').trim();
+    s.chars = s.text.length;
+    if (s.chars >= 30 && block !== document.body) {
+      const r = block.getBoundingClientRect();
+      s.counts = r.width >= 20 && r.height >= 8 && (!block.checkVisibility || block.checkVisibility({ visibilityProperty: true }));
+    }
+    statsMemo.set(block, s);
+    return s;
+  }
+  const countsAsBlock = (el) => el.nodeType === 1 && isBlockLevel(el) && blockStats(el).counts;
+
+  function blockFeatures(block) {
+    const s = blockStats(block);
+    const text = s.text;
     const rect = block.getBoundingClientRect();
     const vw = window.innerWidth || 1;
     const f = {
-      chars: text.length,
+      chars: s.chars,
       words: text ? text.split(' ').length : 0,
-      sentences: (text.match(/[.!?]["')\]]?(\s|$)/g) || []).length,
-      endsPunct: /[.!?]["')\]]?$/.test(text),
+      sentences: (text.match(SENTENCE_END_RX) || []).length,
+      endsPunct: ENDS_PUNCT_RX.test(text),
+      promo: PROMO_RX.test(text) ? 1 : 0,
       linkFrac: s.link / Math.max(1, s.total),
       tag: block.tagName.toLowerCase(),
       wFrac: rect.width / vw,
       cx: (rect.left + rect.right) / 2 / vw,
-      ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, chain: ''
+      ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, chain: '',
+      prevChars: 0, nextChars: 0, sibProse: 0
     };
     const chain = [];
     for (let e = block; e && e !== document.documentElement; e = e.parentElement) {
@@ -314,13 +379,34 @@
       }
     }
     f.chain = chain.join('>');
+    // Contextual: nearest counting sibling blocks and the parent's prose share.
+    let p = block.previousElementSibling; while (p && !countsAsBlock(p)) p = p.previousElementSibling;
+    let nx = block.nextElementSibling; while (nx && !countsAsBlock(nx)) nx = nx.nextElementSibling;
+    f.prevChars = p ? blockStats(p).chars : 0;
+    f.nextChars = nx ? blockStats(nx).chars : 0;
+    const par = block.parentElement;
+    const sibs = par ? [...par.children].filter(countsAsBlock) : [];
+    if (!sibs.length) sibs.push(block);
+    const prose = sibs.filter((c) => { const cs = blockStats(c); return cs.chars >= 80 && cs.link / Math.max(1, cs.total) < 0.5; }).length;
+    f.sibProse = prose / sibs.length;
     return f;
   }
 
+  // Is this block long-form prose a person reads? Memoised per pass.
+  function isProseBlockEl(block) {
+    let v = proseMemo.get(block);
+    if (v === undefined) {
+      v = block !== document.body && isProseBlock(blockFeatures(block));
+      proseMemo.set(block, v);
+    }
+    return v;
+  }
+
   function applyColors() {
-    const scheme = SCHEMES[state.scheme] || SCHEMES.classic;
+    const scheme = SCHEMES[effectiveScheme()] || SCHEMES.classic;
     const palettes = { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) };
     colorMemo = new WeakMap();
+    resetBlockMemos();
     ensureRoot();
     const spans = document.querySelectorAll(`span[${CHAR_ATTR}]`);
     if (!spans.length) return;
@@ -329,23 +415,6 @@
     // which is stable within a run and shared by most sibling char spans —
     // collapses tens of thousands of getComputedStyle calls into a few.
     const blockByParent = new Map();
-    const blockStats = new Map();
-    const linkByParent = new Map();
-    const inLink = (p) => {
-      let v = linkByParent.get(p);
-      if (v === undefined) { v = !!p && !!p.closest('a'); linkByParent.set(p, v); }
-      return v;
-    };
-    const proseByBlock = new Map();
-    const isProse = (block) => {
-      let v = proseByBlock.get(block);
-      if (v === undefined) {
-        const s = blockStats.get(block);
-        v = !!s && isProseBlock(blockFeatures(block, s));
-        proseByBlock.set(block, v);
-      }
-      return v;
-    };
     const verticalByBlock = new Map();
 
     const getBlock = (el) => {
@@ -389,8 +458,11 @@
       if (!p) {
         // Gradient leaves are painted with color:transparent; ignore that.
         const tc = parseCssColor(getComputedStyle(block).color);
-        const dark = isDarkSurface(surfaceBg(block), tc && tc.a > 0 ? tc : null);
-        p = dark ? palettes.dark : palettes.light;
+        const bg = surfaceBg(block);
+        const dark = isDarkSurface(bg, tc && tc.a > 0 ? tc : null);
+        // Mid-tone surfaces (grey cards, tinted callouts) can leave either
+        // variant below 4.5:1; nudge lightness only as far as needed.
+        p = ensureContrast(dark ? palettes.dark : palettes.light, bg);
         paletteByBlock.set(block, p);
       }
       return p;
@@ -409,12 +481,6 @@
       if (!rect.width && !rect.height) continue;
       const block = getBlock(span);
       if (isVertical(block)) continue;
-      let bs = blockStats.get(block);
-      if (!bs) { bs = { text: '', total: 0, link: 0 }; blockStats.set(block, bs); }
-      const ch = span.textContent;
-      bs.text += ch;
-      bs.total += ch.length;
-      if (inLink(span.parentElement)) bs.link += ch.length;
       const top = rect.top;
       const heightGuard = Math.max(1, rect.height);
       const lineBreak =
@@ -435,22 +501,14 @@
     // Resolve every line's palette in a read-only pass so getComputedStyle
     // never interleaves with the style.setProperty writes below.
     const linePalettes = lines.map((l) => l.spans.length ? paletteFor(getBlock(l.spans[0])) : null);
-    const lineOk = lines.map((l) => l.spans.length ? isProse(getBlock(l.spans[0])) : false);
 
     const blocks = new Set();
-    let k = 0;   // index among painted lines, so the colour cycle skips plain ones
     for (let li = 0; li < lines.length; li++) {
       const line = lines[li];
       if (!line.spans.length) continue;
-      if (!lineOk[li]) {
-        // Not long-form prose (metadata, captions, references...): leave plain.
-        for (const sp of line.spans) sp.style.removeProperty('--bzln-c');
-        continue;
-      }
       const palette = linePalettes[li];
-      const start = palette[k % palette.length];
-      const end = palette[(k + 1) % palette.length];
-      k++;
+      const start = palette[li % palette.length];
+      const end = palette[(li + 1) % palette.length];
       const firstLeft = line.rects[0].left;
       const lastRight = line.rects[line.rects.length - 1].right;
       const width = Math.max(1, lastRight - firstLeft);
@@ -824,6 +882,21 @@
     closeBtn.addEventListener('click', closeReader);
     header.appendChild(title);
     header.appendChild(sprintAll);
+    const paras = [];
+    const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
+    let speakBtn = null;
+    if (canSpeak) {
+      speakBtn = document.createElement('button');
+      speakBtn.className = 'bzln-reader-btn';
+      speakBtn.type = 'button';
+      speakBtn.textContent = '🔊 Read aloud';
+      speakBtn.title = 'Read the text aloud, paragraph by paragraph';
+      speakBtn.addEventListener('click', () => {
+        if (readerState && readerState.speaking) stopSpeaking();
+        else speakFrom(0);
+      });
+      header.appendChild(speakBtn);
+    }
     header.appendChild(closeBtn);
 
     const body = document.createElement('div');
@@ -832,6 +905,9 @@
       const p = document.createElement('p');
       p.className = 'bzln-reader-para';
       p.textContent = text;
+      // Click a paragraph while reading aloud to jump to it.
+      p.addEventListener('click', () => { if (readerState && readerState.speaking) speakFrom(paras.indexOf(p)); });
+      paras.push(p);
       body.appendChild(p);
     }
 
@@ -846,7 +922,33 @@
       if (e.key === 'Escape') { e.preventDefault(); closeReader(); }
     };
     document.addEventListener('keydown', onKey, true);
-    readerState = { root, onKey };
+    readerState = { root, onKey, paras, speakBtn, speaking: false, utter: null };
+
+    function stopSpeaking() {
+      if (!readerState) return;
+      readerState.speaking = false;
+      readerState.utter = null;
+      window.speechSynthesis.cancel();
+      for (const q of readerState.paras) q.classList.remove('bzln-reader-speaking');
+      if (readerState.speakBtn) readerState.speakBtn.textContent = '🔊 Read aloud';
+    }
+    function speakFrom(i) {
+      if (!readerState || i < 0 || i >= readerState.paras.length) { stopSpeaking(); return; }
+      window.speechSynthesis.cancel();
+      const st = readerState;
+      st.speaking = true;
+      st.speakBtn.textContent = '⏹ Stop';
+      for (const q of st.paras) q.classList.remove('bzln-reader-speaking');
+      const p = st.paras[i];
+      p.classList.add('bzln-reader-speaking');
+      p.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const u = new SpeechSynthesisUtterance(p.textContent);
+      u.lang = document.documentElement.lang || navigator.language || 'en';
+      st.utter = u;
+      u.onend = () => { if (readerState === st && st.utter === u && st.speaking) speakFrom(i + 1); };
+      u.onerror = () => { if (readerState === st && st.utter === u) stopSpeaking(); };
+      window.speechSynthesis.speak(u);
+    }
 
     // Appended to <html> to escape page CSS (filter/opacity/etc.), which
     // means the body-scoped MutationObserver won't see it. Process + paint
@@ -859,6 +961,7 @@
 
   function closeReader() {
     if (!readerState) return;
+    if (readerState.speaking) { readerState.speaking = false; window.speechSynthesis.cancel(); }
     document.removeEventListener('keydown', readerState.onKey, true);
     if (readerState.root && readerState.root.parentNode) {
       readerState.root.parentNode.removeChild(readerState.root);
@@ -894,6 +997,7 @@
     observedBody = document.body;
     mo = new MutationObserver((muts) => {
       colorMemo = new WeakMap();
+      resetBlockMemos();
       if (!contentRoot) { scheduleApply(); return; }
       let structureChanged = false;
       for (const m of muts) {
@@ -961,6 +1065,7 @@
     rootMo.observe(document.documentElement, { childList: true });
     window.addEventListener('resize', onResize);
     darkMq.addEventListener('change', onSchemeFlip);
+    applyLinkStyle();
     // Late layout shifts (webfonts, images) change line wrapping after the
     // initial paint. Re-apply twice to catch them.
     trackTimer(setTimeout(() => { if (state.enabled) applyColors(); }, 500));
@@ -978,6 +1083,7 @@
     rootPeers = [];
     window.removeEventListener('resize', onResize);
     darkMq.removeEventListener('change', onSchemeFlip);
+    document.documentElement.classList.remove(LINK_CLASS);
     for (const t of pendingTimers) clearTimeout(t);
     pendingTimers.clear();
     applyTimer = null;
@@ -994,10 +1100,15 @@
     else if (!shouldRun && mo) disable();
   }
 
-  chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts'], (res) => {
+  const readSettings = (res) => {
     state.enabled = !!res.enabled;
     state.scheme = res.scheme || 'classic';
     state.disabledHosts = Array.isArray(res.disabledHosts) ? res.disabledHosts : [];
+    state.siteSchemes = res.siteSchemes && typeof res.siteSchemes === 'object' ? res.siteSchemes : {};
+    state.linkUnderline = res.linkUnderline !== false;
+  };
+  chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts', 'siteSchemes', 'linkUnderline'], (res) => {
+    readSettings(res);
     applyEnabledState();
   });
 
@@ -1006,13 +1117,39 @@
     console.log('[Buzzline] message received:', msg.type);
     if (msg.type === 'sprint-page') sprintPage();
     else if (msg.type === 'open-reader') openReader();
+    else if (msg.type === 'feedback') recordFeedback(msg.verdict);
   });
+
+  // "This should / shouldn't be coloured": store the selected block's feature
+  // vector and the user's verdict locally (never page text) so it can be
+  // exported from the options page into tests/e2e/data as a training label.
+  const FEEDBACK_MAX = 500;
+  function recordFeedback(verdict) {
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    if (!el) return;
+    resetBlockMemos();
+    const block = nearestBlock(el);
+    const { chain, ...f } = blockFeatures(block);
+    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: !!block.querySelector(`span[${CHAR_ATTR}]`), score: +globalThis.BuzzlineCore.blockScore(blockFeatures(block)).toFixed(3), meta: /caption|meta|author|footer|byline|cite|reference/i.test(chain) ? 1 : 0, f };
+    chrome.storage.local.get(['feedback'], (s) => {
+      const list = Array.isArray(s.feedback) ? s.feedback : [];
+      list.push(entry);
+      chrome.storage.local.set({ feedback: list.slice(-FEEDBACK_MAX) });
+    });
+  }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
-    if ('scheme' in changes) {
-      state.scheme = changes.scheme.newValue || 'classic';
+    if ('scheme' in changes || 'siteSchemes' in changes) {
+      if ('scheme' in changes) state.scheme = changes.scheme.newValue || 'classic';
+      if ('siteSchemes' in changes) state.siteSchemes = changes.siteSchemes.newValue || {};
       if (mo) applyColors();
+    }
+    if ('linkUnderline' in changes) {
+      state.linkUnderline = changes.linkUnderline.newValue !== false;
+      if (mo) applyLinkStyle();
     }
     if ('enabled' in changes) {
       state.enabled = !!changes.enabled.newValue;

@@ -119,12 +119,19 @@ function removeHost(host) {
 
 // --- init ---
 
-chrome.storage.sync.get(['sprintWpm', 'disabledHosts'], (s) => {
+const linkUnderlineEl = document.getElementById('link-underline');
+
+chrome.storage.sync.get(['sprintWpm', 'disabledHosts', 'linkUnderline'], (s) => {
   const wpm = clampWpm(
     Number.isFinite(s.sprintWpm) ? s.sprintWpm : DEFAULT_WPM
   );
   setWpmUI(wpm);
   renderHosts(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
+  linkUnderlineEl.checked = s.linkUnderline !== false;
+});
+
+linkUnderlineEl.addEventListener('change', () => {
+  chrome.storage.sync.set({ linkUnderline: linkUnderlineEl.checked }, flashSaved);
 });
 
 wpmSlider.addEventListener('input', () => {
@@ -156,3 +163,47 @@ chrome.storage.onChanged.addListener((changes, area) => {
     setWpmUI(v);
   }
 });
+
+// --- model feedback (stored in chrome.storage.local by the content script) ---
+const fbCount = document.getElementById('feedback-count');
+function refreshFeedback() {
+  chrome.storage.local.get(['feedback'], (s) => {
+    const n = Array.isArray(s.feedback) ? s.feedback.length : 0;
+    fbCount.textContent = `${n} ${n === 1 ? 'entry' : 'entries'}`;
+  });
+}
+document.getElementById('feedback-export').addEventListener('click', () => {
+  chrome.storage.local.get(['feedback'], (s) => {
+    const blob = new Blob([JSON.stringify(s.feedback || [], null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `buzzline-feedback-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+});
+document.getElementById('feedback-clear').addEventListener('click', () => {
+  chrome.storage.local.set({ feedback: [] }, () => { refreshFeedback(); flashSaved(); });
+});
+chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.feedback) refreshFeedback(); });
+refreshFeedback();
+
+// --- Sprint chunking + punctuation holds ---
+const chunkEl = document.getElementById('sprint-chunk');
+const periodEl = document.getElementById('delay-period');
+const commaEl = document.getElementById('delay-comma');
+const clampMul = (v, d) => (Number.isFinite(v) && v >= 1 && v <= 5 ? Math.round(v * 10) / 10 : d);
+chrome.storage.sync.get(['sprintChunk', 'sprintDelays'], (s) => {
+  chunkEl.value = String([1, 2, 3].includes(Number(s.sprintChunk)) ? Number(s.sprintChunk) : 1);
+  const d = s.sprintDelays || {};
+  periodEl.value = String(clampMul(+d.period, 2.4));
+  commaEl.value = String(clampMul(+d.comma, 1.7));
+});
+chunkEl.addEventListener('change', () => chrome.storage.sync.set({ sprintChunk: Number(chunkEl.value) }, flashSaved));
+const saveDelays = () => {
+  const period = clampMul(parseFloat(periodEl.value), 2.4), comma = clampMul(parseFloat(commaEl.value), 1.7);
+  periodEl.value = String(period); commaEl.value = String(comma);
+  chrome.storage.sync.set({ sprintDelays: { period, comma } }, flashSaved);
+};
+periodEl.addEventListener('change', saveDelays);
+commaEl.addEventListener('change', saveDelays);

@@ -9,6 +9,10 @@
   const DEFAULT_WPM = 500;
   const MIN_WPM = 150;
   const MAX_WPM = 900;
+  // Settings (chrome.storage.sync): sprintChunk = words per flash (1-3),
+  // sprintDelays = { period, comma } hold multipliers at clause boundaries.
+  const DEFAULTS = { chunk: 1, delays: { period: 2.4, comma: 1.7 } };
+  let settings = { ...DEFAULTS };
 
   // Pivot rule — longer words put the ORP slightly further in.
   function orpIndex(word) {
@@ -23,11 +27,25 @@
   // Hold longer on punctuation and on long words so readers catch clause
   // boundaries. Multipliers are applied to the base WPM tick.
   function delayMultiplier(word) {
-    if (/[.!?][")\]]?$/.test(word)) return 2.4;
-    if (/[,;:][")\]]?$/.test(word)) return 1.7;
+    if (/[.!?][")\]]?$/.test(word)) return settings.delays.period;
+    if (/[,;:][")\]]?$/.test(word)) return settings.delays.comma;
     if (/[—–]$/.test(word)) return 1.5;
     if (word.length > 9) return 1.3;
     return 1;
+  }
+
+  // Group N words per flash. A clause-ending word closes its chunk early so
+  // punctuation holds still land where the reader expects them.
+  function chunkWords(words, n) {
+    if (n <= 1) return words;
+    const out = [];
+    let cur = [];
+    for (const w of words) {
+      cur.push(w);
+      if (cur.length >= n || /[.!?,;:][")\]]?$/.test(w)) { out.push(cur.join(' ')); cur = []; }
+    }
+    if (cur.length) out.push(cur.join(' '));
+    return out;
   }
 
   let session = null;
@@ -60,7 +78,8 @@
     if (!session || !session.playing) return;
     render();
     const word = session.words[session.index];
-    const base = 60000 / session.wpm;
+    // A multi-word chunk gets time proportional to its word count.
+    const base = (60000 / session.wpm) * Math.max(1, word.split(' ').length);
     const delay = base * delayMultiplier(word);
     session.timer = setTimeout(() => {
       if (!session) return;
@@ -112,27 +131,37 @@
     return e;
   }
 
-  function resolveStartWpm(cb) {
+  function resolveSettings(cb) {
     try {
-      chrome.storage.sync.get(['sprintWpm'], (s) => {
+      chrome.storage.sync.get(['sprintWpm', 'sprintChunk', 'sprintDelays'], (s) => {
         const v = Number(s && s.sprintWpm);
-        if (Number.isFinite(v) && v >= MIN_WPM && v <= MAX_WPM) cb(v);
-        else cb(DEFAULT_WPM);
+        const wpm = Number.isFinite(v) && v >= MIN_WPM && v <= MAX_WPM ? v : DEFAULT_WPM;
+        const c = Number(s && s.sprintChunk);
+        const d = (s && s.sprintDelays) || {};
+        settings = {
+          chunk: Number.isFinite(c) && c >= 1 && c <= 3 ? Math.round(c) : DEFAULTS.chunk,
+          delays: {
+            period: Number.isFinite(+d.period) && d.period >= 1 && d.period <= 5 ? +d.period : DEFAULTS.delays.period,
+            comma: Number.isFinite(+d.comma) && d.comma >= 1 && d.comma <= 5 ? +d.comma : DEFAULTS.delays.comma
+          }
+        };
+        cb(wpm);
       });
     } catch {
+      settings = { ...DEFAULTS };
       cb(DEFAULT_WPM);
     }
   }
 
   function build(text) {
     close();
-    const words = globalThis.BuzzlineCore.tokenizeWords(text);
-    if (!words.length) return;
+    const tokens = globalThis.BuzzlineCore.tokenizeWords(text);
+    if (!tokens.length) return;
     const myToken = ++buildToken;
-    resolveStartWpm((startWpm) => {
+    resolveSettings((startWpm) => {
       // A later build() superseded this one — bail.
       if (myToken !== buildToken) return;
-      buildSession(text, words, startWpm);
+      buildSession(text, chunkWords(tokens, settings.chunk), startWpm);
     });
   }
 

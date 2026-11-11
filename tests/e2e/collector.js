@@ -25,13 +25,15 @@
     if (p.hasAttribute('data-bzln') && p.style.getPropertyValue('--bzln-c')) r.coloured += v.length;
   }
   const out = [];
+  const recs = [];
   for (const r of blocks.values()) {
     const el = r.el; if (!el.checkVisibility || !el.checkVisibility({ visibilityProperty: true })) continue;
     const text = r.text.replace(/\s+/g, ' ').trim(); if (text.length < 30) continue;
     const rect = el.getBoundingClientRect(); if (rect.width < 20 || rect.height < 8) continue;
     const cs = getComputedStyle(el);
     const words = text.split(' ').length;
-    const sentences = (text.match(/[.!?]["')\]]?(\s|$)/g) || []).length;
+    const sentences = (text.match(/[.!?]["')\]]?(\s|$)|[。！？]/g) || []).length;
+    const promo = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i.test(text) ? 1 : 0;
     const chain = []; const flags = { ad: 0, rel: 0, side: 0, nav: 0, comment: 0 }; const land = { main: 0, article: 0, nav: 0, aside: 0, header: 0, footer: 0, form: 0 };
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
@@ -41,11 +43,26 @@
       if (chain.length < 6) chain.push(t + (e.id ? '#' + e.id.slice(0, 18) : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/)[0].slice(0, 18) : ''));
     }
     let depth = 0; for (let e = el; e; e = e.parentElement) depth++;
-    const sibs = el.parentElement ? [...el.parentElement.children].filter(s => s.tagName === el.tagName).length : 1;
-    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
+    const rec = { el, link: r.link / Math.max(1, r.total), row: out.length };
+    recs.push(rec);
+    out.push({ tag: el.tagName.toLowerCase(), chars: text.length, words, sentences, promo, endsPunct: /[.!?。！？]["')\]]?$/.test(text) ? 1 : 0, linkFrac: +(r.link / Math.max(1, r.total)).toFixed(3),
       cx: +(((rect.left + rect.right) / 2) / vw).toFixed(3), wFrac: +(rect.width / vw).toFixed(3), left: +(rect.left / vw).toFixed(3), y: +(((rect.top + scrollY) / docH)).toFixed(3), h: Math.round(rect.height),
-      fs: parseFloat(cs.fontSize) || 0, depth, sibs, ...Object.fromEntries(Object.entries(flags).map(([k, v]) => ['f_' + k, v])), ...Object.fromEntries(Object.entries(land).map(([k, v]) => ['l_' + k, v])),
+      fs: parseFloat(cs.fontSize) || 0, depth, ...Object.fromEntries(Object.entries(flags).map(([k, v]) => ['f_' + k, v])), ...Object.fromEntries(Object.entries(land).map(([k, v]) => ['l_' + k, v])),
       coloured: +(r.coloured / Math.max(1, r.total)).toFixed(3), chain: chain.reverse().join('>'), text: text.slice(0, 220) });
+  }
+  // Contextual features. "Collected block" = any block in `out` (visible, >= 30 chars).
+  // prev/nextChars: chars of the nearest previous/next element sibling that is a collected block.
+  // sibProse: share of the parent's collected-block children with >= 80 chars and < 50% link text.
+  const byEl = new Map(recs.map((r) => [r.el, r]));
+  for (const r of recs) {
+    let p = r.el.previousElementSibling; while (p && !byEl.has(p)) p = p.previousElementSibling;
+    let n = r.el.nextElementSibling; while (n && !byEl.has(n)) n = n.nextElementSibling;
+    const o = out[r.row];
+    o.prevChars = p ? out[byEl.get(p).row].chars : 0;
+    o.nextChars = n ? out[byEl.get(n).row].chars : 0;
+    const sibs = r.el.parentElement ? [...r.el.parentElement.children].filter((c) => byEl.has(c)) : [r.el];
+    const prose = sibs.filter((c) => { const s = out[byEl.get(c).row]; return s.chars >= 80 && s.linkFrac < 0.5; }).length;
+    o.sibProse = +(prose / Math.max(1, sibs.length)).toFixed(3);
   }
   return { title: document.title.slice(0, 120), url: location.href, vw, docH, blocks: out };
 })()

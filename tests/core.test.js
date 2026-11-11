@@ -58,3 +58,25 @@ test('blockScore separates long prose from metadata, references and link chrome'
   assert.ok(!isProseBlock(sidebarLinks), 'sidebar link list is not');
   assert.ok(blockScore(prose) > blockScore({ ...prose, chars: 60 }), 'longer text scores higher');
 });
+
+test('ensureContrast lifts every palette colour to 4.5:1 on mid-tone surfaces and leaves good ones alone', () => {
+  const { ensureContrast, contrastRatio, hexToRgb, SCHEMES } = require('../src/core.js');
+  const grey = { r: 110, g: 110, b: 110 };          // neither variant is readable here as-is
+  for (const scheme of Object.values(SCHEMES)) for (const variant of ['light', 'dark']) {
+    const pal = scheme[variant].map(hexToRgb);
+    for (const c of ensureContrast(pal, grey)) assert.ok(contrastRatio(c, grey) >= 4.5, `${scheme.name} ${variant} on grey`);
+  }
+  const white = { r: 255, g: 255, b: 255 };
+  const light = SCHEMES.classic.light.map(hexToRgb);
+  assert.deepEqual(ensureContrast(light, white), light, 'already-readable palette is untouched');
+  assert.deepEqual(ensureContrast(light, null), light, 'unknown background: untouched');
+});
+
+test('promo wording lowers the prose score; CJK sentence terminators count', () => {
+  const { blockScore, SENTENCE_END_RX, ENDS_PUNCT_RX } = require('../src/core.js');
+  const base = { chars: 150, words: 25, sentences: 3, endsPunct: true, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'p', wFrac: 0.5, cx: 0.5, prevChars: 0, nextChars: 0, sibProse: 0.5 };
+  assert.ok(blockScore({ ...base, promo: 0 }) - blockScore({ ...base, promo: 1 }) > 0.1, 'promo flag costs at least 0.1');
+  assert.equal(blockScore({ ...base, promo: undefined, text: 'Subscribe to continue reading.' }), blockScore({ ...base, promo: 1 }), 'promo derived from text');
+  assert.equal(('ミツバチは花の蜜を集める。働き蜂は巣を守る！' .match(SENTENCE_END_RX) || []).length, 2);
+  assert.ok(ENDS_PUNCT_RX.test('これは文です。'));
+});

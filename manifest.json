@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Buzzline",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Eye-guiding color gradients that pull your eyes through long blocks of text.",
-  "permissions": ["storage", "activeTab", "clipboardRead"],
+  "permissions": ["storage", "activeTab", "clipboardRead", "contextMenus"],
+  "background": { "service_worker": "src/background.js" },
+  "commands": {
+    "toggle-enabled": { "suggested_key": { "default": "Alt+B" }, "description": "Toggle Buzzline coloring" },
+    "sprint-page": { "suggested_key": { "default": "Alt+S" }, "description": "Sprint-read the selection or the page" },
+    "open-reader": { "description": "Open the Buzzline reader" }
+  },
   "action": {
     "default_popup": "src/popup.html",
     "default_title": "Buzzline"

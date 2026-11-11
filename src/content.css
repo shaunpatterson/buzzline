@@ -6,6 +6,15 @@ span[data-bzln] {
   color: var(--bzln-c, inherit) !important;
 }
 
+/* Links inside coloured text: the gradient already overrides the link colour;
+   neutralise the page's own underline/decoration colour so it does not fight
+   the gradient. Toggled by the "linkUnderline" option (html.bzln-neutral-links). */
+html.bzln-neutral-links a:has(span[data-bzln]) {
+  text-decoration: underline !important;
+  text-decoration-color: rgba(128, 128, 128, 0.55) !important;
+  text-decoration-thickness: 1px !important;
+}
+
 /* ---------- Per-block Sprint launcher ---------- */
 button[data-bzln-launcher] {
   all: unset;
@@ -283,4 +292,11 @@ button[data-bzln-launcher] > svg {
 .bzln-reader-para {
   margin: 0 0 1em 0;
   color: inherit;
+}
+
+/* Reader: paragraph currently being read aloud */
+.bzln-reader-para.bzln-reader-speaking {
+  outline: 2px solid rgba(247, 201, 72, 0.9) !important;
+  outline-offset: 6px !important;
+  border-radius: 4px !important;
 }

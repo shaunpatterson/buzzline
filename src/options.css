@@ -175,3 +175,14 @@ main {
   transition: opacity 0.2s;
 }
 .saved.show { opacity: 1; }
+
+.check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; cursor: pointer; }
+.check-row input { margin-top: 3px; flex: none; }
+
+.feedback-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.feedback-row button { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
+
+.sprint-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 14px 22px; margin-top: 12px; font-size: 13px; }
+.sprint-grid label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.sprint-grid input, .sprint-grid select { font: inherit; width: 90px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--fg); }
+.sprint-grid .mul { display: inline-flex; align-items: center; gap: 6px; }

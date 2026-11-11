@@ -16,9 +16,15 @@ for (const key of Object.keys(SCHEMES)) {
   schemeSelect.appendChild(opt);
 }
 
-chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts'], (s) => {
+const siteOnly = document.getElementById('site-only');
+let siteSchemes = {};
+let globalScheme = 'classic';
+
+chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts', 'siteSchemes'], (s) => {
   toggle.checked = !!s.enabled;
-  schemeSelect.value = SCHEMES[s.scheme] ? s.scheme : 'classic';
+  globalScheme = SCHEMES[s.scheme] ? s.scheme : 'classic';
+  siteSchemes = s.siteSchemes && typeof s.siteSchemes === 'object' ? s.siteSchemes : {};
+  schemeSelect.value = globalScheme;
   renderPreview();
   initSiteRow(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
 });
@@ -26,9 +32,29 @@ chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts'], (s) => {
 toggle.addEventListener('change', () => {
   chrome.storage.sync.set({ enabled: toggle.checked });
 });
+// Scheme: global by default; with "only this site" ticked it is remembered
+// for the current hostname only (siteSchemes[host]).
 schemeSelect.addEventListener('change', () => {
-  chrome.storage.sync.set({ scheme: schemeSelect.value });
+  if (siteOnly.checked && currentHost) {
+    siteSchemes = { ...siteSchemes, [currentHost]: schemeSelect.value };
+    chrome.storage.sync.set({ siteSchemes });
+  } else {
+    globalScheme = schemeSelect.value;
+    chrome.storage.sync.set({ scheme: globalScheme });
+  }
   renderPreview();
+});
+siteOnly.addEventListener('change', () => {
+  if (!currentHost) return;
+  if (siteOnly.checked) {
+    siteSchemes = { ...siteSchemes, [currentHost]: schemeSelect.value };
+  } else {
+    const { [currentHost]: _dropped, ...rest } = siteSchemes;
+    siteSchemes = rest;
+    schemeSelect.value = globalScheme;
+    renderPreview();
+  }
+  chrome.storage.sync.set({ siteSchemes });
 });
 
 function initSiteRow(disabledHosts) {
@@ -48,6 +74,12 @@ function initSiteRow(disabledHosts) {
     siteHostEl.title = host;
     siteToggle.checked = !disabledHosts.includes(host);
     siteRow.hidden = false;
+    siteOnly.disabled = false;
+    if (siteSchemes[host] && SCHEMES[siteSchemes[host]]) {
+      siteOnly.checked = true;
+      schemeSelect.value = siteSchemes[host];
+      renderPreview();
+    }
   });
 }
 
@@ -79,6 +111,12 @@ document.getElementById('sprint-page-btn').addEventListener('click', () => {
 });
 document.getElementById('open-reader-btn').addEventListener('click', () => {
   sendToActiveTab({ type: 'open-reader' });
+});
+document.getElementById('fb-no').addEventListener('click', () => {
+  sendToActiveTab({ type: 'feedback', verdict: 'no' });
+});
+document.getElementById('fb-yes').addEventListener('click', () => {
+  sendToActiveTab({ type: 'feedback', verdict: 'yes' });
 });
 
 siteToggle.addEventListener('change', () => {

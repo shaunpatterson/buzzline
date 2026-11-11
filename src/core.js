@@ -50,6 +50,24 @@
   const isDarkSurface = (bg, text) =>
     bg ? relLuminance(bg) < 0.18 : (text ? relLuminance(text) > 0.5 : false);
 
+  // Nudge each palette colour toward white (dark surface) or black (light
+  // surface) until it reaches `min` contrast against `bg`. Keeps hue; only the
+  // lightness moves, and only as far as needed. bg null -> palette unchanged.
+  const MIN_CONTRAST = 4.5;
+  const ensureContrast = (palette, bg, min = MIN_CONTRAST) => {
+    if (!bg) return palette;
+    const target = relLuminance(bg) < 0.18 ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
+    return palette.map((c) => {
+      if (contrastRatio(c, bg) >= min) return c;
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 8; i++) {           // binary search the mix amount
+        const t = (lo + hi) / 2;
+        if (contrastRatio(mix(c, target, t), bg) >= min) hi = t; else lo = t;
+      }
+      return mix(c, target, hi);
+    });
+  };
+
   // Whitespace split, then fold punctuation-only tokens into a neighbour so
   // Sprint never flashes a lone "," or "—". Unambiguous openers attach to the
   // next word; everything else attaches to the previous word.
@@ -68,35 +86,48 @@
   };
 
   // Tiny logistic model: is this text block "guts" (long-form prose a person
-  // reads) rather than metadata, captions, references, ads or link chrome?
-  // Trained on LLM-labelled blocks from 17 real sites (tests/e2e); evaluated
-  // leave-one-site-out. Input is a plain feature object (see blockScore).
+  // reads) rather than metadata, captions, references, ads, listing cards or
+  // link chrome? Trained on 5.5k LLM-labelled blocks from 82 real sites
+  // (tests/e2e/train.js); 16 sites held out. Input is a plain feature object.
   const META_RX = /(cite|citation|reference|caption|metadata|byline|dateline|author|footer|credit|timestamp|breadcrumb|toc|disclaimer|copyright|modified|meta)/i;
+  // Wording typical of paywalls, newsletter/subscribe prompts and promos that
+  // are otherwise structurally identical to body paragraphs.
+  const PROMO_RX = /\b(subscri(?:be|ption|ber)s?|newsletter|sign up|unlimited access|support (?:our|independent|quality)|podcast|follow us|download (?:the|our) app|start the conversation|continue reading|become a member|already a member|log ?in|all rights reserved|cookie)\b/i;
+  // Sentence terminators incl. CJK full-width forms.
+  const SENTENCE_END_RX = /[.!?]["')\]]?(\s|$)|[。！？]/g;
+  const ENDS_PUNCT_RX = /[.!?。！？]["')\]]?$/;
   const BLOCK_MODEL = {
     threshold: 0.4,
-    //        bias    logChars linkFrac sentDens endsPunct meta    ad      rel    side    nav     chrome  main    isP    isLi   isTd   wFrac  edge
-    w: [-1.163, 1.846, -2.193, 0.533, 0.192, -3.456, -1.159, 0.062, -0.595, -0.739, -2.317, -0.17, 3.132, 1.606, 0.066, 0.679, -0.572]
+    minChars: 50,   // hard floor: shorter blocks are never "long stretches of text"
+    //   bias   logChars linkFrac sentDens endsPunct meta   ad     rel    side  nav   chrome  main   isP   isLi  isTd  wFrac  edge  nbrLong sibProse promo
+    w: [-3.156, 1.749, -2.246, -0.426, 0.369, -2.539, -0.167, -0.573, 0.185, 0.287, -1.782, -0.273, 2.168, 0.601, -0.193, 0.715, -0.15, 0.992, 1.682, -1.034]
   };
   const sigmoid = (z) => 1 / (1 + Math.exp(-z));
-  // f: { chars, words, sentences, endsPunct, linkFrac, chain, ad, rel, side, nav,
-  //      chrome (nav/aside/header/footer ancestors), main (main/article ancestors),
-  //      tag, wFrac (width / viewport), cx (horizontal centre / viewport) }
+  // f: { chars, words, sentences, endsPunct, linkFrac, chain (ancestor path; only
+  //      META_RX matters), ad, rel, side, nav (class/id token hits), chrome
+  //      (nav/aside/header/footer ancestors), main (main/article ancestors),
+  //      tag, wFrac (width / viewport), cx (horizontal centre / viewport),
+  //      prevChars/nextChars (chars of the nearest sibling blocks, 0 if none),
+  //      sibProse (share of sibling blocks that are >= 80 chars and < 50% links),
+  //      promo (PROMO_RX wording; or `text` to derive it) }
   const blockScore = (f) => {
     const x = [
       1, Math.log10(Math.max(1, f.chars)) / 3, f.linkFrac, Math.min(1, (f.sentences / Math.max(1, f.words)) * 10),
-      f.endsPunct ? 1 : 0, META_RX.test(f.chain || '') ? 1 : 0,
+      f.endsPunct ? 1 : 0, (f.meta !== undefined ? f.meta : META_RX.test(f.chain || '')) ? 1 : 0,
       f.ad > 0 ? 1 : 0, f.rel > 0 ? 1 : 0, f.side > 0 ? 1 : 0, f.nav > 0 ? 1 : 0,
       f.chrome > 0 ? 1 : 0, f.main > 0 ? 1 : 0,
       f.tag === 'p' ? 1 : 0, f.tag === 'li' ? 1 : 0, (f.tag === 'td' || f.tag === 'th') ? 1 : 0,
-      f.wFrac, Math.abs(f.cx - 0.5) * 2
+      f.wFrac, Math.abs(f.cx - 0.5) * 2,
+      Math.log10(1 + Math.max(f.prevChars || 0, f.nextChars || 0)) / 3, f.sibProse || 0,
+      (f.promo !== undefined ? f.promo : PROMO_RX.test(f.text || '')) ? 1 : 0
     ];
     let z = 0;
     for (let i = 0; i < x.length; i++) z += x[i] * BLOCK_MODEL.w[i];
     return sigmoid(z);
   };
-  const isProseBlock = (f) => blockScore(f) > BLOCK_MODEL.threshold;
+  const isProseBlock = (f) => f.chars >= BLOCK_MODEL.minChars && blockScore(f) > BLOCK_MODEL.threshold;
 
-  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL };
+  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, PROMO_RX, SENTENCE_END_RX, ENDS_PUNCT_RX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineCore = api;
 })();

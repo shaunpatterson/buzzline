@@ -39,7 +39,17 @@ The content script:
 Per-site opt-out: the popup shows the current hostname behind an "Enabled on"
 toggle; switch it off to skip that site. Disabled hostnames are stored in
 `chrome.storage.sync` under `disabledHosts` and are skipped even when the
-global switch is on.
+global switch is on. Tick "Only for this site" next to the scheme picker to
+remember a different color scheme for the current hostname.
+
+Links inside colored text keep the gradient; their underline is drawn in a
+neutral grey so it does not fight it (Settings → Coloring to turn that off).
+On mid-tone surfaces (grey cards, tinted callouts) every palette colour is
+nudged toward white or black until it reaches 4.5:1 contrast.
+
+Keyboard: `Alt+B` toggles coloring, `Alt+S` sprint-reads the selection or the
+page (change them at `chrome://extensions/shortcuts`). Right-click → "Sprint-read
+selection", "Sprint-read this page" or "Open Buzzline reader".
 
 Colors are applied via a CSS custom property (`--bzln-c`) read by a rule in
 `content.css`. That rule carries `!important` so it overrides site CSS; the
@@ -62,7 +72,11 @@ into the neighbouring word so they never flash on their own.
 
 Controls: play/pause (space), prev/next word (← / →), close (Esc), speed
 slider (150–900 WPM, default 500). Punctuation and long words get
-proportionally longer holds so you can catch clause boundaries.
+proportionally longer holds so you can catch clause boundaries; Settings lets
+you change the sentence/comma hold multipliers and flash 1–3 words at a time.
+
+The Reader overlay has a "Read aloud" button (browser text-to-speech) that
+highlights the paragraph being spoken; click any paragraph to jump there.
 
 ## Color schemes
 
@@ -80,19 +94,33 @@ pages and the OS dark mode are readable without a separate scheme.
 ## What gets colored
 
 Only long stretches of prose a person reads. Buzzline first finds the page's
-main prose container, then a 17-weight logistic model (`BLOCK_MODEL` in
-`src/core.js`) scores each text block on cheap features — length, link
-density, sentence shape, tag, width/position, and whether its ancestors look
-like metadata, references, ads, sidebars or navigation — and leaves
-low-scoring blocks plain (bylines, captions, citations, link lists).
+main prose container, then a 20-weight logistic model (`BLOCK_MODEL` in
+`src/core.js`) scores each text block *before* it is split into spans, on
+cheap features — length, link density, sentence shape, tag, width/position,
+whether its ancestors look like metadata, references, ads, sidebars or
+navigation, how much prose its neighbouring/sibling blocks hold, and
+paywall/newsletter wording. Low-scoring blocks (bylines, captions, citations,
+listing cards, "Updated on …" rows) are left untouched; blocks under 50
+characters are never colored.
 
-The model was fit on LLM-labelled blocks from 17 real sites (`tests/e2e`).
-Leave-one-site-out, char-weighted: precision 0.900 → 0.953, recall 0.974 →
-0.958. On 11 sites it never saw: precision 0.928 → 0.982, recall 0.992 → 0.988.
-Refit with `node tests/e2e/train.js` and re-score the unseen sites with
-`node tests/e2e/score_unseen.js`. `tests/e2e/collector.js` is the page-side
-block collector; the committed data holds per-block features and labels only,
-never page text.
+The model was fit on 5.5k LLM-labelled blocks from 82 real sites (news,
+docs, wikis, forums, listings, four languages; `tests/e2e`), with the ~15%
+contested labels re-judged by a stronger model. Char-weighted precision /
+recall of what gets colored, root pick alone → with the model:
+
+| | precision | recall |
+|---|---|---|
+| leave-one-site-out, 66 training sites | 0.821 / 0.980 → 0.930 / 0.901 |
+| 16 sites never used for fitting | 0.830 / 0.923 → 0.972 / 0.902 |
+
+Known misses: paywall / subscribe paragraphs on some news sites still pass
+(they are structurally real paragraphs), and slideshow-style listicles whose
+body text sits in `*-caption` containers are under-colored. Refit with
+`node tests/e2e/train.js`; `tests/e2e/collector.js` is the page-side block
+collector; the committed data holds per-block features and labels only, never
+page text. Blocks you mark "should / shouldn't be colored" from the popup are
+stored locally (features only) and can be exported from Settings to grow the
+dataset.
 
 ## Known limitations
 
@@ -112,13 +140,16 @@ never page text.
 
 ```
 manifest.json          Chrome MV3 manifest
-src/content.js         Per-char span + gradient engine + Sprint launchers
-src/core.js            Shared pure helpers: schemes, colour math, Sprint tokenizer
-src/sprint.js          RSVP reader overlay (ORP-aligned word flashing)
-src/content.css        Base CSS + launcher + Sprint overlay styles
-src/popup.html/css/js  Toolbar popup (toggle, scheme picker, live preview)
+src/content.js         Per-char span + gradient engine, block classifier, Sprint launchers, Reader
+src/core.js            Shared pure helpers: schemes, colour math, block model, Sprint tokenizer
+src/sprint.js          RSVP reader overlay (ORP-aligned word flashing, chunking)
+src/background.js      Service worker: context menu + keyboard commands
+src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
+src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
+src/options.html/css/js Settings page (Sprint, coloring, blocked sites, feedback export)
 tests/core.test.js     Unit tests for core.js (`node --test`)
 tests/e2e/             Block collector, labelled dataset and model trainer
+scripts/build_firefox.js  Writes dist/firefox/ with a Firefox manifest (event page, gecko id)
 icons/                 Extension icons (cropped from assets/logo.png)
 scripts/gen_icons.py   Regenerates the icons (Pillow)
 ```
@@ -127,8 +158,12 @@ scripts/gen_icons.py   Regenerates the icons (Pillow)
 
 - No build step. Edit files, reload the extension in `chrome://extensions`,
   reload the page.
-- State lives in `chrome.storage.sync` under the keys `enabled`, `scheme`,
-  and `disabledHosts` (array of hostnames to skip).
+- State lives in `chrome.storage.sync` under `enabled`, `scheme`,
+  `disabledHosts`, `siteSchemes`, `linkUnderline`, `sprintWpm`, `sprintChunk`,
+  `sprintDelays`; model feedback lives in `chrome.storage.local.feedback`.
+- Firefox: `node scripts/build_firefox.js`, then load `dist/firefox/` from
+  `about:debugging`. Untested here — Firefox MV3 treats host permissions as
+  optional, so enable "Run on all sites" in the add-on's settings.
 - To regenerate icons: `python3 scripts/gen_icons.py`.
 
 ## Caveat

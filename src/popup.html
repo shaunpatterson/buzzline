@@ -18,6 +18,7 @@
   <section class="controls">
     <label for="scheme">Color scheme</label>
     <select id="scheme"></select>
+    <label class="site-only"><input type="checkbox" id="site-only" disabled> Only for this site</label>
   </section>
   <section class="actions">
     <button type="button" id="sprint-page-btn" class="action-btn">Sprint this page</button>
@@ -35,6 +36,11 @@
   </section>
   <section class="preview-wrap">
     <div id="preview" class="preview"></div>
+  </section>
+  <section class="feedback" title="Select some text on the page first. Stores the block's features locally (never the text) for improving the model.">
+    <span class="feedback-caption">Selected text…</span>
+    <button type="button" id="fb-no" class="fb-btn">shouldn't be colored</button>
+    <button type="button" id="fb-yes" class="fb-btn">should be colored</button>
   </section>
   <footer>
     <p class="hint">Changes apply on page reload if coloring isn't visible right away.</p>

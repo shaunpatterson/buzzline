@@ -23,6 +23,28 @@
         <input type="range" id="sprint-wpm" min="150" max="900" step="10" value="500">
         <span class="wpm-value" id="sprint-wpm-value">500 wpm</span>
       </div>
+      <div class="sprint-grid">
+        <label>Words per flash
+          <select id="sprint-chunk"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        </label>
+        <label>Hold at sentence end
+          <span class="mul"><input type="number" id="delay-period" min="1" max="5" step="0.1" value="2.4"> &times;</span>
+        </label>
+        <label>Hold at comma / clause
+          <span class="mul"><input type="number" id="delay-comma" min="1" max="5" step="0.1" value="1.7"> &times;</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head">
+        <h2>Coloring</h2>
+        <p class="sub">How colored text interacts with the page's own styling.</p>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="link-underline" checked>
+        <span>Neutral underline for links inside colored text (the gradient replaces the link color; this keeps the underline from fighting it)</span>
+      </label>
     </section>
 
     <section class="group">
@@ -39,6 +61,18 @@
 
       <ul class="hosts" id="hosts"></ul>
       <p class="empty" id="empty" hidden>No sites blocked.</p>
+    </section>
+
+    <section class="group">
+      <div class="group-head">
+        <h2>Model feedback</h2>
+        <p class="sub">Blocks you marked "should / shouldn't be colored" from the popup. Only features are stored, never page text. Export to add them to <code>tests/e2e/data</code>.</p>
+      </div>
+      <div class="feedback-row">
+        <span id="feedback-count">0 entries</span>
+        <button type="button" id="feedback-export">Export JSON</button>
+        <button type="button" id="feedback-clear" class="remove">Clear</button>
+      </div>
     </section>
 
     <footer class="page-foot">
