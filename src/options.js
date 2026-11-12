@@ -1,6 +1,4 @@
-const MIN_WPM = 150;
-const MAX_WPM = 900;
-const DEFAULT_WPM = 500;
+const S = globalThis.BuzzlineSettings;
 
 const wpmSlider = document.getElementById('sprint-wpm');
 const wpmValue = document.getElementById('sprint-wpm-value');
@@ -19,30 +17,9 @@ function flashSaved() {
   savedTimer = setTimeout(() => savedEl.classList.remove('show'), 1200);
 }
 
-function clampWpm(v) {
-  if (!Number.isFinite(v)) return DEFAULT_WPM;
-  return Math.max(MIN_WPM, Math.min(MAX_WPM, Math.round(v / 10) * 10));
-}
-
 function setWpmUI(v) {
   wpmSlider.value = String(v);
   wpmValue.textContent = `${v} wpm`;
-}
-
-// Accept raw hostnames or full URLs; return a lowercase hostname or null.
-function normalizeHost(raw) {
-  let s = raw.trim().toLowerCase();
-  if (!s) return null;
-  if (s.includes('://')) {
-    try { s = new URL(s).hostname; } catch { return null; }
-  } else {
-    s = s.replace(/\/.*$/, '');
-  }
-  if (!s || s.length > 253) return null;
-  if (!/^[a-z0-9.-]+$/.test(s)) return null;
-  if (s.startsWith('.') || s.endsWith('.')) return null;
-  if (!s.includes('.')) return null;
-  return s;
 }
 
 function showAddError(msg) {
@@ -80,9 +57,7 @@ function renderHosts(list) {
 }
 
 function loadHosts(cb) {
-  chrome.storage.sync.get(['disabledHosts'], (s) => {
-    cb(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
-  });
+  S.load((s) => cb(s.disabledHosts));
 }
 
 function saveHosts(list) {
@@ -93,7 +68,7 @@ function saveHosts(list) {
 }
 
 function addHost(raw) {
-  const host = normalizeHost(raw);
+  const host = S.normalizeHost(raw);
   if (!host) {
     showAddError('Enter a valid hostname, like example.com');
     return;
@@ -104,7 +79,7 @@ function addHost(raw) {
       showAddError(`${host} is already blocked`);
       return;
     }
-    const next = list.concat(host);
+    const next = S.withHostDisabled(list, host, true);
     saveHosts(next);
     addInput.value = '';
   });
@@ -112,7 +87,7 @@ function addHost(raw) {
 
 function removeHost(host) {
   loadHosts((list) => {
-    const next = list.filter((h) => h !== host);
+    const next = S.withHostDisabled(list, host, false);
     saveHosts(next);
   });
 }
@@ -121,25 +96,16 @@ function removeHost(host) {
 
 const linkUnderlineEl = document.getElementById('link-underline');
 
-chrome.storage.sync.get(['sprintWpm', 'disabledHosts', 'linkUnderline'], (s) => {
-  const wpm = clampWpm(
-    Number.isFinite(s.sprintWpm) ? s.sprintWpm : DEFAULT_WPM
-  );
-  setWpmUI(wpm);
-  renderHosts(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
-  linkUnderlineEl.checked = s.linkUnderline !== false;
-});
-
 linkUnderlineEl.addEventListener('change', () => {
   chrome.storage.sync.set({ linkUnderline: linkUnderlineEl.checked }, flashSaved);
 });
 
 wpmSlider.addEventListener('input', () => {
-  const v = clampWpm(parseInt(wpmSlider.value, 10));
+  const v = S.clampWpm(parseInt(wpmSlider.value, 10));
   wpmValue.textContent = `${v} wpm`;
 });
 wpmSlider.addEventListener('change', () => {
-  const v = clampWpm(parseInt(wpmSlider.value, 10));
+  const v = S.clampWpm(parseInt(wpmSlider.value, 10));
   chrome.storage.sync.set({ sprintWpm: v }, flashSaved);
 });
 
@@ -159,7 +125,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     renderHosts(next);
   }
   if (changes.sprintWpm) {
-    const v = clampWpm(Number(changes.sprintWpm.newValue));
+    const v = S.clampWpm(Number(changes.sprintWpm.newValue));
     setWpmUI(v);
   }
 });
@@ -193,16 +159,19 @@ refreshFeedback();
 const chunkEl = document.getElementById('sprint-chunk');
 const periodEl = document.getElementById('delay-period');
 const commaEl = document.getElementById('delay-comma');
-const clampMul = (v, d) => (Number.isFinite(v) && v >= 1 && v <= 5 ? Math.round(v * 10) / 10 : d);
-chrome.storage.sync.get(['sprintChunk', 'sprintDelays'], (s) => {
-  chunkEl.value = String([1, 2, 3].includes(Number(s.sprintChunk)) ? Number(s.sprintChunk) : 1);
-  const d = s.sprintDelays || {};
-  periodEl.value = String(clampMul(+d.period, 2.4));
-  commaEl.value = String(clampMul(+d.comma, 1.7));
+
+// --- initial values (after every element lookup) ---
+S.load((s) => {
+  setWpmUI(s.sprintWpm);
+  renderHosts(s.disabledHosts);
+  linkUnderlineEl.checked = s.linkUnderline;
+  chunkEl.value = String(s.sprintChunk);
+  periodEl.value = String(s.sprintDelays.period);
+  commaEl.value = String(s.sprintDelays.comma);
 });
 chunkEl.addEventListener('change', () => chrome.storage.sync.set({ sprintChunk: Number(chunkEl.value) }, flashSaved));
 const saveDelays = () => {
-  const period = clampMul(parseFloat(periodEl.value), 2.4), comma = clampMul(parseFloat(commaEl.value), 1.7);
+  const period = S.clampMul(parseFloat(periodEl.value), S.DELAYS.period), comma = S.clampMul(parseFloat(commaEl.value), S.DELAYS.comma);
   periodEl.value = String(period); commaEl.value = String(comma);
   chrome.storage.sync.set({ sprintDelays: { period, comma } }, flashSaved);
 };

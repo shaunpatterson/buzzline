@@ -1,4 +1,5 @@
 const { SCHEMES, hexToRgb, mix, rgbStr } = globalThis.BuzzlineCore;
+const S = globalThis.BuzzlineSettings;
 
 const toggle = document.getElementById('toggle');
 const schemeSelect = document.getElementById('scheme');
@@ -20,13 +21,13 @@ const siteOnly = document.getElementById('site-only');
 let siteSchemes = {};
 let globalScheme = 'classic';
 
-chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts', 'siteSchemes'], (s) => {
-  toggle.checked = !!s.enabled;
-  globalScheme = SCHEMES[s.scheme] ? s.scheme : 'classic';
-  siteSchemes = s.siteSchemes && typeof s.siteSchemes === 'object' ? s.siteSchemes : {};
+S.load((s) => {
+  toggle.checked = s.enabled;
+  globalScheme = s.scheme;
+  siteSchemes = s.siteSchemes;
   schemeSelect.value = globalScheme;
   renderPreview();
-  initSiteRow(Array.isArray(s.disabledHosts) ? s.disabledHosts : []);
+  initSiteRow(s.disabledHosts);
 });
 
 toggle.addEventListener('change', () => {
@@ -36,7 +37,7 @@ toggle.addEventListener('change', () => {
 // for the current hostname only (siteSchemes[host]).
 schemeSelect.addEventListener('change', () => {
   if (siteOnly.checked && currentHost) {
-    siteSchemes = { ...siteSchemes, [currentHost]: schemeSelect.value };
+    siteSchemes = S.withSiteScheme(siteSchemes, currentHost, schemeSelect.value);
     chrome.storage.sync.set({ siteSchemes });
   } else {
     globalScheme = schemeSelect.value;
@@ -47,10 +48,9 @@ schemeSelect.addEventListener('change', () => {
 siteOnly.addEventListener('change', () => {
   if (!currentHost) return;
   if (siteOnly.checked) {
-    siteSchemes = { ...siteSchemes, [currentHost]: schemeSelect.value };
+    siteSchemes = S.withSiteScheme(siteSchemes, currentHost, schemeSelect.value);
   } else {
-    const { [currentHost]: _dropped, ...rest } = siteSchemes;
-    siteSchemes = rest;
+    siteSchemes = S.withSiteScheme(siteSchemes, currentHost, null);
     schemeSelect.value = globalScheme;
     renderPreview();
   }
@@ -121,13 +121,7 @@ document.getElementById('fb-yes').addEventListener('click', () => {
 
 siteToggle.addEventListener('change', () => {
   if (!currentHost) return;
-  chrome.storage.sync.get(['disabledHosts'], (s) => {
-    const list = Array.isArray(s.disabledHosts) ? s.disabledHosts.slice() : [];
-    const idx = list.indexOf(currentHost);
-    if (!siteToggle.checked && idx === -1) list.push(currentHost);
-    else if (siteToggle.checked && idx !== -1) list.splice(idx, 1);
-    chrome.storage.sync.set({ disabledHosts: list });
-  });
+  S.load((s) => chrome.storage.sync.set({ disabledHosts: S.withHostDisabled(s.disabledHosts, currentHost, !siteToggle.checked) }));
 });
 
 function renderPreview() {

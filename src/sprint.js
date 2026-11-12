@@ -6,13 +6,11 @@
   // highlighted and horizontally aligned so the eye stays still. Exposes
   // window.__bzlnSprint(text); a new call replaces any open session.
 
-  const DEFAULT_WPM = 500;
-  const MIN_WPM = 150;
-  const MAX_WPM = 900;
-  // Settings (chrome.storage.sync): sprintChunk = words per flash (1-3),
-  // sprintDelays = { period, comma } hold multipliers at clause boundaries.
-  const DEFAULTS = { chunk: 1, delays: { period: 2.4, comma: 1.7 } };
-  let settings = { ...DEFAULTS };
+  // Settings (chrome.storage.sync via BuzzlineSettings): sprintWpm, sprintChunk
+  // = words per flash (1-3), sprintDelays = { period, comma } hold multipliers
+  // at clause boundaries. Read once per build().
+  const S = globalThis.BuzzlineSettings;
+  let settings = S.normalize({});
 
   // Pivot rule — longer words put the ORP slightly further in.
   function orpIndex(word) {
@@ -27,8 +25,8 @@
   // Hold longer on punctuation and on long words so readers catch clause
   // boundaries. Multipliers are applied to the base WPM tick.
   function delayMultiplier(word) {
-    if (/[.!?][")\]]?$/.test(word)) return settings.delays.period;
-    if (/[,;:][")\]]?$/.test(word)) return settings.delays.comma;
+    if (/[.!?][")\]]?$/.test(word)) return settings.sprintDelays.period;
+    if (/[,;:][")\]]?$/.test(word)) return settings.sprintDelays.comma;
     if (/[—–]$/.test(word)) return 1.5;
     if (word.length > 9) return 1.3;
     return 1;
@@ -131,38 +129,19 @@
     return e;
   }
 
-  function resolveSettings(cb) {
-    try {
-      chrome.storage.sync.get(['sprintWpm', 'sprintChunk', 'sprintDelays'], (s) => {
-        const v = Number(s && s.sprintWpm);
-        const wpm = Number.isFinite(v) && v >= MIN_WPM && v <= MAX_WPM ? v : DEFAULT_WPM;
-        const c = Number(s && s.sprintChunk);
-        const d = (s && s.sprintDelays) || {};
-        settings = {
-          chunk: Number.isFinite(c) && c >= 1 && c <= 3 ? Math.round(c) : DEFAULTS.chunk,
-          delays: {
-            period: Number.isFinite(+d.period) && d.period >= 1 && d.period <= 5 ? +d.period : DEFAULTS.delays.period,
-            comma: Number.isFinite(+d.comma) && d.comma >= 1 && d.comma <= 5 ? +d.comma : DEFAULTS.delays.comma
-          }
-        };
-        cb(wpm);
-      });
-    } catch {
-      settings = { ...DEFAULTS };
-      cb(DEFAULT_WPM);
-    }
-  }
-
   function build(text) {
     close();
     const tokens = globalThis.BuzzlineCore.tokenizeWords(text);
     if (!tokens.length) return;
     const myToken = ++buildToken;
-    resolveSettings((startWpm) => {
+    const start = (s) => {
       // A later build() superseded this one — bail.
       if (myToken !== buildToken) return;
-      buildSession(text, chunkWords(tokens, settings.chunk), startWpm);
-    });
+      settings = s;
+      buildSession(text, chunkWords(tokens, s.sprintChunk), s.sprintWpm);
+    };
+    // Extension context invalidated (extension reloaded under the page): defaults.
+    try { S.load(start); } catch { start(S.normalize({})); }
   }
 
   function buildSession(text, words, startWpm) {
@@ -216,8 +195,8 @@
     speedLabel.appendChild(wpmText);
     const slider = document.createElement('input');
     slider.type = 'range';
-    slider.min = String(MIN_WPM);
-    slider.max = String(MAX_WPM);
+    slider.min = String(S.WPM.min);
+    slider.max = String(S.WPM.max);
     slider.step = '10';
     slider.value = String(startWpm);
     slider.className = 'bzln-sprint-slider';

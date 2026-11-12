@@ -7,15 +7,12 @@
 
   const GRAD_ATTR = 'data-bzln-grad';
 
-  const state = { enabled: false, scheme: 'classic', disabledHosts: [], siteSchemes: {}, linkUnderline: true };
+  const S = globalThis.BuzzlineSettings;
+  let settings = S.normalize({});
   const currentHost = (location.hostname || '').toLowerCase();
-  const isHostDisabled = () =>
-    Array.isArray(state.disabledHosts) && state.disabledHosts.includes(currentHost);
-  // Per-site scheme override wins over the global scheme.
-  const effectiveScheme = () => state.siteSchemes[currentHost] || state.scheme;
   const LINK_CLASS = 'bzln-neutral-links';
   const applyLinkStyle = () => {
-    document.documentElement.classList.toggle(LINK_CLASS, !!mo && state.linkUnderline);
+    document.documentElement.classList.toggle(LINK_CLASS, !!mo && settings.linkUnderline);
   };
   let mo = null;
   let rootMo = null;
@@ -25,7 +22,7 @@
   let applyTimer = null;
   let resizeTimer = null;
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
-  const onSchemeFlip = () => { if (state.enabled) applyColors(); };
+  const onSchemeFlip = () => { if (settings.enabled) applyColors(); };
 
   // Content root upkeep lives in reading.js; this side arms the trailing
   // retry when a rescan is throttled and queues the new roots.
@@ -37,7 +34,7 @@
         rootRetryTimer = trackTimer(setTimeout(() => {
           pendingTimers.delete(rootRetryTimer);
           rootRetryTimer = null;
-          if (state.enabled) applyColors();
+          if (settings.enabled) applyColors();
         }, r.retryInMs));
       }
       return;
@@ -69,7 +66,7 @@
       CSS.highlights.set(name, h);
       if (!hlRules.has(name)) {
         hlRules.add(name);
-        const deco = inLinkRun && state.linkUnderline ? ' text-decoration: underline; text-decoration-color: rgba(128,128,128,0.55);' : '';
+        const deco = inLinkRun && settings.linkUnderline ? ' text-decoration: underline; text-decoration-color: rgba(128,128,128,0.55);' : '';
         hlSheet.insertRule(`::highlight(${name}) { color: ${rgbStr(color)};${deco} }`);
       }
     }
@@ -189,7 +186,7 @@
   let passCache = null;           // per colouring pass caches (see beginPass)
 
   function beginPass() {
-    const scheme = SCHEMES[effectiveScheme()] || SCHEMES.classic;
+    const scheme = SCHEMES[S.effectiveScheme(settings, currentHost)];
     passCache = {
       palettes: { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) },
       blockByParent: new Map(), verticalByBlock: new Map(), bgByEl: new Map(), paletteByBlock: new Map()
@@ -286,7 +283,7 @@
   }
   function schedulePump() {
     if (pumpHandle !== null) return;
-    const run = () => { pumpHandle = null; if (state.enabled && mo) pump(SLICE_MS); };
+    const run = () => { pumpHandle = null; if (settings.enabled && mo) pump(SLICE_MS); };
     pumpHandle = window.requestIdleCallback ? requestIdleCallback(run, { timeout: 250 }) : setTimeout(run, 16);
   }
   function cancelPump() {
@@ -322,7 +319,7 @@
     if ((!stale.size && !pending.size) || scrollTimer) return;
     scrollTimer = setTimeout(() => {
       scrollTimer = null;
-      if (!state.enabled || !mo) return;
+      if (!settings.enabled || !mo) return;
       const near = NEAR_PX();
       let added = 0;
       for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.add(b); added++; } }
@@ -544,7 +541,7 @@
     // Appended to <html> to escape page CSS (filter/opacity/etc.), which
     // means the body-scoped MutationObserver won't see it. Process + paint
     // the overlay explicitly so its paragraphs pick up per-char coloring.
-    if (state.enabled) {
+    if (settings.enabled) {
       processRoot(body);
       applyColors();
     }
@@ -567,7 +564,7 @@
     applyTimer = trackTimer(setTimeout(() => {
       pendingTimers.delete(applyTimer);
       applyTimer = null;
-      if (state.enabled) applyColors();
+      if (settings.enabled) applyColors();
     }, 40));
   }
 
@@ -579,7 +576,7 @@
     resizeTimer = trackTimer(setTimeout(() => {
       pendingTimers.delete(resizeTimer);
       resizeTimer = null;
-      if (state.enabled) applyColors();
+      if (settings.enabled) applyColors();
     }, 120));
   }
 
@@ -655,8 +652,8 @@
     applyLinkStyle();
     // Late layout shifts (webfonts, images) change line wrapping after the
     // initial paint. Re-apply twice to catch them.
-    trackTimer(setTimeout(() => { if (state.enabled) applyColors(); }, 500));
-    trackTimer(setTimeout(() => { if (state.enabled) applyColors(); }, 1500));
+    trackTimer(setTimeout(() => { if (settings.enabled) applyColors(); }, 500));
+    trackTimer(setTimeout(() => { if (settings.enabled) applyColors(); }, 1500));
   }
 
   function disable() {
@@ -682,22 +679,12 @@
   }
 
   function applyEnabledState() {
-    const shouldRun = state.enabled && !isHostDisabled();
+    const shouldRun = settings.enabled && !S.isHostDisabled(settings, currentHost);
     if (shouldRun && !mo) enable();
     else if (!shouldRun && mo) disable();
   }
 
-  const readSettings = (res) => {
-    state.enabled = !!res.enabled;
-    state.scheme = res.scheme || 'classic';
-    state.disabledHosts = Array.isArray(res.disabledHosts) ? res.disabledHosts : [];
-    state.siteSchemes = res.siteSchemes && typeof res.siteSchemes === 'object' ? res.siteSchemes : {};
-    state.linkUnderline = res.linkUnderline !== false;
-  };
-  chrome.storage.sync.get(['enabled', 'scheme', 'disabledHosts', 'siteSchemes', 'linkUnderline'], (res) => {
-    readSettings(res);
-    applyEnabledState();
-  });
+  S.load((s) => { settings = s; applyEnabledState(); });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) return;
@@ -730,22 +717,17 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
+    settings = S.merge(settings, changes);
     if ('scheme' in changes || 'siteSchemes' in changes) {
-      if ('scheme' in changes) state.scheme = changes.scheme.newValue || 'classic';
-      if ('siteSchemes' in changes) state.siteSchemes = changes.siteSchemes.newValue || {};
       if (mo) applyColors();
     }
     if ('linkUnderline' in changes) {
-      state.linkUnderline = changes.linkUnderline.newValue !== false;
       if (mo) applyLinkStyle();
     }
     if ('enabled' in changes) {
-      state.enabled = !!changes.enabled.newValue;
       applyEnabledState();
     }
     if ('disabledHosts' in changes) {
-      const next = changes.disabledHosts.newValue;
-      state.disabledHosts = Array.isArray(next) ? next : [];
       applyEnabledState();
     }
   });
