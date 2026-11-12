@@ -137,7 +137,8 @@
   //      sibProse (share of sibling blocks that are >= 80 chars and < 50% links),
   //      promo/digitFrac/upperFrac/puncFrac/avgWordLen/price/dateish/endsColon
   //      (textFeatures of the first TEXT_WINDOW chars; or `text` to derive them) }
-  // Feature order MUST match tests/e2e/train.js.
+  // The trainer calls this function; this is the only definition.
+  const FEATURE_NAMES = ['bias', 'logChars', 'linkFrac', 'sentDens', 'meta', 'ad', 'rel', 'side', 'nav', 'chrome', 'main', 'isP', 'isLi', 'isTd', 'wFrac', 'edge', 'nbrLong', 'sibProse', 'promo', 'digitFrac', 'upperFrac', 'puncFrac', 'avgWordLen', 'price', 'dateish', 'endsColon'];
   const featureVector = (f) => {
     const t = f.digitFrac === undefined ? textFeatures(f.text || '') : f;
     return [
@@ -171,7 +172,7 @@
   };
   const isProseBlock = (f) => f.chars >= BLOCK_MODEL.minChars && blockScore(f) > BLOCK_MODEL.threshold;
 
-  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, blockScore, isProseBlock, BLOCK_MODEL, META_RX, PROMO_RX, PROMO_WINDOW, TEXT_WINDOW, textFeatures, SENTENCE_END_RX };
+  const api = { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, relLuminance, contrastRatio, isDarkSurface, ensureContrast, tokenizeWords, featureVector, FEATURE_NAMES, blockScore, isProseBlock, BLOCK_MODEL, META_RX, PROMO_RX, PROMO_WINDOW, TEXT_WINDOW, textFeatures, SENTENCE_END_RX };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineCore = api;
 })();

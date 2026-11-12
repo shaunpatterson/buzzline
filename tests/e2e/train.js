@@ -19,16 +19,9 @@ const quick = process.argv.includes('--quick');
 
 const get = (site, i) => { const cols = blocksFile.columns; const v = blocksFile.rows[site][i]; const o = {}; cols.forEach((c, k) => { o[c] = v[k]; }); return o; };
 
-// Feature vector. MUST match blockScore() in src/core.js.
-const NAMES = ['bias', 'logChars', 'linkFrac', 'sentDens', 'meta', 'ad', 'rel', 'side', 'nav', 'chrome', 'main', 'isP', 'isLi', 'isTd', 'wFrac', 'edge', 'nbrLong', 'sibProse', 'promo', 'digitFrac', 'upperFrac', 'puncFrac', 'avgWordLen', 'price', 'dateish', 'endsColon'];
-const feat = (b) => [
-  1, Math.log10(b.chars) / 3, b.linkFrac, Math.min(1, (b.sentences / Math.max(1, b.words)) * 10), b.meta ? 1 : 0,
-  b.f_ad > 0 ? 1 : 0, b.f_rel > 0 ? 1 : 0, b.f_side > 0 ? 1 : 0, b.f_nav > 0 ? 1 : 0,
-  (b.l_nav + b.l_aside + b.l_header + b.l_footer) > 0 ? 1 : 0, (b.l_main + b.l_article) > 0 ? 1 : 0,
-  b.tag === 'p' ? 1 : 0, b.tag === 'li' ? 1 : 0, (b.tag === 'td' || b.tag === 'th') ? 1 : 0,
-  b.wFrac, Math.abs(b.cx - 0.5) * 2, Math.log10(1 + Math.max(b.prevChars, b.nextChars)) / 3, b.sibProse, b.promo ? 1 : 0,
-  b.digitFrac, b.upperFrac, b.puncFrac, b.avgWordLen, b.price ? 1 : 0, b.dateish ? 1 : 0, b.endsColon ? 1 : 0,
-];
+// Feature vector comes from src/core.js.
+const { featureVector, FEATURE_NAMES: NAMES } = require('../../src/core.js');
+const feat = featureVector;
 const rows = Object.entries(labels).map(([k, role]) => {
   const [site, i] = k.split(':'); const b = get(site, i);
   return { site, b, x: feat(b), y: role === 'body' && !/^h[1-6]$/.test(b.tag) ? 1 : 0, w: Math.min(b.chars, 1000), col: b.coloured > 0.5 };
