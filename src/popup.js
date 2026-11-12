@@ -1,5 +1,6 @@
 const { SCHEMES, hexToRgb, mix, rgbStr } = globalThis.BuzzlineCore;
 const S = globalThis.BuzzlineSettings;
+const I = globalThis.BuzzlineIntents;
 
 const toggle = document.getElementById('toggle');
 const schemeSelect = document.getElementById('scheme');
@@ -92,32 +93,20 @@ document.getElementById('settings-link').addEventListener('click', (e) => {
   }
 });
 
-function sendToActiveTab(message) {
+function sendToActiveTab(intent) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs && tabs[0];
     if (!tab || !tab.id) return;
-    // Close the popup AFTER the callback fires so the IPC send isn't torn
-    // down mid-flight. lastError will typically be "message port closed"
-    // because our listener doesn't call sendResponse — that's expected.
-    chrome.tabs.sendMessage(tab.id, message, () => {
-      void chrome.runtime.lastError;
-      window.close();
-    });
+    // Close the popup only after delivery settles so the send isn't torn down
+    // mid-flight.
+    I.send(tab.id, intent, () => window.close());
   });
 }
 
-document.getElementById('sprint-page-btn').addEventListener('click', () => {
-  sendToActiveTab({ type: 'sprint-page' });
-});
-document.getElementById('open-reader-btn').addEventListener('click', () => {
-  sendToActiveTab({ type: 'open-reader' });
-});
-document.getElementById('fb-no').addEventListener('click', () => {
-  sendToActiveTab({ type: 'feedback', verdict: 'no' });
-});
-document.getElementById('fb-yes').addEventListener('click', () => {
-  sendToActiveTab({ type: 'feedback', verdict: 'yes' });
-});
+document.getElementById('sprint-page-btn').addEventListener('click', () => sendToActiveTab(I.sprintPage()));
+document.getElementById('open-reader-btn').addEventListener('click', () => sendToActiveTab(I.openReader()));
+document.getElementById('fb-no').addEventListener('click', () => sendToActiveTab(I.feedback('no')));
+document.getElementById('fb-yes').addEventListener('click', () => sendToActiveTab(I.feedback('yes')));
 
 siteToggle.addEventListener('change', () => {
   if (!currentHost) return;

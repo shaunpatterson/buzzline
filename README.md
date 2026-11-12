@@ -172,7 +172,8 @@ src/reading.js         Reading text: content root, reading runs, Reader/Sprint e
 src/schedule.js        Sprint schedule: chunks, ORP pivot and hold per chunk (pure, node-tested)
 src/sprint.js          RSVP reader overlay: renders the schedule, timer, keys, speed slider
 src/gradient.js        Line gradient: measured line fragments + palette -> coloured runs (pure, node-tested)
-src/background.js      Service worker: context menu + keyboard commands
+src/intents.js         Intents: what popup, context menu and keys can ask a page to do (shared sender/receiver)
+src/background.js      Service worker: context menu + keyboard commands (loads core/settings/intents)
 src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
 src/options.html/css/js Settings page (Sprint, coloring, blocked sites, feedback export)

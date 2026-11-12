@@ -1,6 +1,12 @@
-// Background service worker: context menu entries and keyboard commands.
+// Background script: context menu entries and keyboard commands.
 // Everything else lives in the content script; this only forwards intents.
+// Chrome runs this file as a service worker and loads the shared modules with
+// importScripts below; Firefox runs it as an event page whose manifest lists
+// the same modules first (scripts/build_firefox.js reads this call).
 'use strict';
+if (typeof importScripts === 'function') importScripts('core.js', 'settings.js', 'intents.js');
+const S = globalThis.BuzzlineSettings;
+const I = globalThis.BuzzlineIntents;
 
 const MENU_SELECTION = 'bzln-sprint-selection';
 const MENU_PAGE = 'bzln-sprint-page';
@@ -16,28 +22,22 @@ function installMenus() {
 chrome.runtime.onInstalled.addListener(installMenus);
 chrome.runtime.onStartup.addListener(installMenus);
 
-function send(tabId, message) {
-  if (tabId == null) return;
-  chrome.tabs.sendMessage(tabId, message, () => { void chrome.runtime.lastError; });
-}
-
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab) return;
   // The content script's sprint-page handler prefers the current selection
-  // when there is one, so both menu entries map to the same message.
+  // when there is one, so both menu entries map to the same intent.
   // selectionText also covers selections the content script cannot see
   // (inside <textarea>/<input> or a sub-frame; the script runs top-frame only).
-  if (info.menuItemId === MENU_SELECTION) send(tab.id, { type: 'sprint-page', text: info.selectionText || '' });
-  else if (info.menuItemId === MENU_PAGE) send(tab.id, { type: 'sprint-page' });
-  else if (info.menuItemId === MENU_READER) send(tab.id, { type: 'open-reader' });
+  if (info.menuItemId === MENU_SELECTION) I.send(tab.id, I.sprintPage(info.selectionText));
+  else if (info.menuItemId === MENU_PAGE) I.send(tab.id, I.sprintPage());
+  else if (info.menuItemId === MENU_READER) I.send(tab.id, I.openReader());
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'toggle-enabled') {
-    chrome.storage.sync.get(['enabled'], (s) => chrome.storage.sync.set({ enabled: !s.enabled }));
-  } else if (command === 'sprint-page') {
-    send(tab && tab.id, { type: 'sprint-page' });
-  } else if (command === 'open-reader') {
-    send(tab && tab.id, { type: 'open-reader' });
+    S.load((s) => chrome.storage.sync.set({ enabled: !s.enabled }));
+    return;
   }
+  const intent = I.forCommand(command);
+  if (intent) I.send(tab && tab.id, intent);
 });

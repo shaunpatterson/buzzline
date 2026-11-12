@@ -5,6 +5,7 @@
   const { planRuns } = globalThis.BuzzlineGradient;
   const { LAUNCHER_ATTR, isLauncher, inLink, nearestBlock, blockFeatures, reset: resetBlockMemos } = globalThis.BuzzlineBlocks;
   const R = globalThis.BuzzlineReading;
+  const I = globalThis.BuzzlineIntents;
 
   const GRAD_ATTR = 'data-bzln-grad';
 
@@ -654,11 +655,8 @@
   S.load((s) => { settings = s; applyEnabledState(); });
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (!msg || !msg.type) return;
-    console.log('[Buzzline] message received:', msg.type);
-    if (msg.type === 'sprint-page') sprintPage(msg.text);
-    else if (msg.type === 'open-reader') openReader();
-    else if (msg.type === 'feedback') recordFeedback(msg.verdict);
+    if (msg && msg.type) console.log('[Buzzline] message received:', msg.type);
+    I.handle(msg, { sprintPage, openReader, feedback: recordFeedback });
   });
 
   // "This should / shouldn't be coloured": store the selected block's feature
