@@ -3,7 +3,7 @@
 
   const { SCHEMES, hexToRgb, rgbStr, parseCssColor, isDarkSurface, ensureContrast } = globalThis.BuzzlineCore;
   const { planRuns } = globalThis.BuzzlineGradient;
-  const { LAUNCHER_ATTR, isLauncher, inLink, nearestBlock, blockFeatures } = globalThis.BuzzlineBlocks;
+  const { LAUNCHER_ATTR, isLauncher, inLink, nearestBlock, blockFeatures, reset: resetBlockMemos } = globalThis.BuzzlineBlocks;
   const R = globalThis.BuzzlineReading;
 
   const GRAD_ATTR = 'data-bzln-grad';
@@ -155,18 +155,10 @@
       };
     }
 
+    // Queue a root's text; the real checks (classifier, self-colour, skip
+    // ancestors) run per block in colourBlock, inside the time slices.
     function processRoot(root) {
-      if (!root) return;
-      if (root.nodeType === 1 && R.isSkipped(root)) return;
-      const walker = document.createTreeWalker(
-        root,
-        NodeFilter.SHOW_TEXT,
-        // Cheap pre-filter only; the real checks (classifier, self-colour, skip
-        // ancestors) run per block in colourBlock, inside the time slices.
-        { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && R.inScope(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
-      );
-      let n;
-      while ((n = walker.nextNode())) queueTextNode(n);
+      for (const n of R.candidateText(root)) queueTextNode(n);
     }
 
     // Remember a text node under its block and queue the block for colouring.
@@ -259,8 +251,7 @@
     // time. On big pages only blocks near the viewport are re-queued; the rest
     // are marked stale and picked up as the user scrolls towards them.
     function applyColors() {
-      R.beginPass();
-      ensureRoot();
+      refreshReading();
       beginPass();
       const big = R.isBigPage();
       const near = NEAR_PX() * 2;
@@ -307,30 +298,25 @@
       }, 40));
     }
 
-    // Content root upkeep lives in reading.js; this side arms the trailing
-    // retry when a rescan is throttled and queues the new roots.
-    function ensureRoot() {
-      const r = R.ensureRoot();
-      if (!r) return;
-      if (r.retryInMs !== undefined) {
-        if (!rootRetryTimer) {
-          rootRetryTimer = trackTimer(setTimeout(() => {
-            pendingTimers.delete(rootRetryTimer);
-            rootRetryTimer = null;
-            if (!stopped) applyColors();
-          }, r.retryInMs));
-        }
-        return;
+    // Reading text owns the content root; this side arms the trailing retry
+    // when a rescan was throttled and queues newly picked roots.
+    function refreshReading() {
+      const { roots, retryInMs } = R.refresh();
+      if (retryInMs && !rootRetryTimer) {
+        rootRetryTimer = trackTimer(setTimeout(() => {
+          pendingTimers.delete(rootRetryTimer);
+          rootRetryTimer = null;
+          if (!stopped) applyColors();
+        }, retryInMs));
       }
-      r.roots.forEach(processRoot);
+      roots.forEach(processRoot);
     }
 
     function startObserving() {
       if (mo) mo.disconnect();
       observedBody = document.body;
       mo = new MutationObserver((muts) => {
-        R.beginPass();
-        if (!R.hasRoot()) { scheduleApply(); return; }
+        if (!R.changed(muts)) { scheduleApply(); return; }
         let structureChanged = false;
         for (const m of muts) {
           if (m.type === 'childList') {
@@ -338,7 +324,6 @@
             for (const node of m.addedNodes) {
               if (node.nodeType === 1) {
                 if (!isLauncher(node)) ours = false;
-                if (!isLauncher(node)) R.noteAdded(node);
                 processRoot(node);
               } else if (node.nodeType === 3) {
                 ours = false;
@@ -685,7 +670,7 @@
     const node = sel && sel.anchorNode;
     const el = node && (node.nodeType === 1 ? node : node.parentElement);
     if (!el) return;
-    R.beginPass();
+    resetBlockMemos();
     const block = nearestBlock(el);
     const full = blockFeatures(block);
     const { chain, meta, ...f } = full;

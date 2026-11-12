@@ -13,6 +13,12 @@ let h = null;
 before(async () => { h = await startHarness(); });
 after(async () => { if (h) await h.stop(); });
 const needChrome = (t) => { if (!h) { t.skip('Chrome not found (set CHROME_PATH)'); return false; } return true; };
+const expectationsHold = (snap) => {
+  for (const e of snap.expectations) {
+    if (e.expect === 'plain') assert.equal(e.share, 0, `${e.el} should stay plain`);
+    else assert.ok(e.share > 0.5, `${e.el} should be coloured (share ${e.share})`);
+  }
+};
 
 for (const fixture of FIXTURES) {
   test(`${fixture}: every data-expect verdict holds`, async (t) => {
@@ -20,10 +26,7 @@ for (const fixture of FIXTURES) {
     const page = await h.open(fixture);
     const snap = await page.snapshot();
     assert.ok(snap.expectations.length > 0, 'fixture declares expectations');
-    for (const e of snap.expectations) {
-      if (e.expect === 'plain') assert.equal(e.share, 0, `${e.el} should stay plain`);
-      else assert.ok(e.share > 0.5, `${e.el} should be coloured (share ${e.share})`);
-    }
+    expectationsHold(snap);
   });
 }
 
@@ -85,4 +88,26 @@ test('article: Sprint flashes the page from its first chunk and closes when colo
   assert.equal(open.sprintWord, "The committee's");
   await page.setSync({ enabled: false }); await page.settle(300);
   assert.equal((await page.snapshot()).sprintOpen, false);
+});
+
+const PARA = 'Later in the week the committee published its report. It summarised the debate and listed the open questions. Residents were invited to comment before the end of the month, and the chair promised replies to every letter received. ';
+
+test('article: paragraphs added after the first pass are coloured', async (t) => {
+  if (!needChrome(t)) return;
+  const page = await h.open('article.html');
+  await page.evaluate(`(() => { const p = document.createElement('p'); p.id = 'late'; p.dataset.expect = 'coloured'; p.textContent = ${JSON.stringify(PARA)}; document.querySelector('article').appendChild(p); })()`);
+  await page.settle();
+  const snap = await page.snapshot();
+  assert.ok(snap.expectations.some((e) => e.el.startsWith('p#late')));
+  expectationsHold(snap);
+});
+
+test('article: a swapped-in <body> (SPA navigation) is coloured', async (t) => {
+  if (!needChrome(t)) return;
+  const page = await h.open('article.html');
+  await page.evaluate(`(() => { const b = document.createElement('body'); b.innerHTML = '<main><article><h2 data-expect="plain">Next page</h2>' + [1, 2, 3, 4].map((i) => '<p id="n' + i + '" data-expect="coloured">' + ${JSON.stringify(PARA)} + '</p>').join('') + '</article></main>'; document.documentElement.replaceChild(b, document.body); })()`);
+  await page.settle();
+  const snap = await page.snapshot();
+  assert.ok(snap.expectations.some((e) => e.el.startsWith('p#n1')), 'new body is the one checked');
+  expectationsHold(snap);
 });

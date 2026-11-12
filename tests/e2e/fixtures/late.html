@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Late article</title><style>body{font:16px/1.6 Georgia,serif;max-width:720px;margin:40px auto;padding:0 20px}</style></head><body>
+<!-- SPA shell: the prose arrives after the content scripts have already found no content root. -->
+<main id="app"><p>Loading…</p></main>
+<script>
+setTimeout(() => {
+  const s = 'The committee met on three occasions to discuss the proposal and its consequences for the region. Members disagreed about the cost. A vote was taken late in the evening. ';
+  document.getElementById('app').innerHTML = '<article><h1 data-expect="plain">Arrived late</h1>' +
+    [1, 2, 3, 4, 5, 6].map((i) => '<p id="p' + i + '" data-expect="coloured">' + s.repeat(2) + '</p>').join('') + '</article>';
+}, 1500);
+</script>
+</body></html>

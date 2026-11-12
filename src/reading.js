@@ -495,46 +495,71 @@
   }
 
   // ---------- Pass and root lifecycle ----------
-  // Start of a colouring pass or mutation batch: drop every per-pass memo.
+  // Verdicts (isReadingText, isBigPage, sectionStarts, ...) are memoised until
+  // the next refresh() or changed(); each of those starts a fresh pass.
   function beginPass() {
     colorMemo = new WeakMap(); proseMemo = new WeakMap(); runMemo = new WeakMap(); nearMemo = new WeakMap();
     blockOrderRebuilt = false;
     globalThis.BuzzlineBlocks.reset();
   }
 
-  // Make sure the content root is current. A null/stale result is rescanned
-  // at most once per ROOT_RETRY_MS; the caller arms the trailing retry so
-  // late-loading content is found.
-  //   null            root is current, nothing to do
-  //   { retryInMs }   throttled: call again after retryInMs
-  //   { roots }       rescanned: root + peers to process ([] = no prose body)
-  function ensureRoot() {
-    if (contentRoot && contentRoot.isConnected && !rootStale) return null;
+  // Start a colouring pass. The content root is rescanned when it is missing,
+  // detached or stale, at most once per ROOT_RETRY_MS.
+  //   roots      roots picked by this call, for the caller to colour; [] when
+  //              the root is unchanged, the rescan was throttled, or the page
+  //              has no prose body
+  //   retryInMs  > 0 when a rescan was due but throttled: call refresh()
+  //              again after that long so late-loading prose is found
+  function refresh() {
+    beginPass();
+    if (contentRoot && contentRoot.isConnected && !rootStale) return { roots: [], retryInMs: 0 };
     const wait = rootPickedAt + ROOT_RETRY_MS - performance.now();
-    if ((!contentRoot || rootStale) && rootPickedAt && wait > 0) return { retryInMs: wait };
+    if ((!contentRoot || rootStale) && rootPickedAt && wait > 0) return { roots: [], retryInMs: wait };
     rootPickedAt = performance.now();
     const prev = contentRoot && contentRoot.isConnected ? contentRoot : null;
     const picked = pickContentRoot(collectReadable(document.body));
     contentRoot = picked ? picked.root : (rootStale ? prev : null);
     rootPeers = picked ? picked.peers : (rootStale && prev ? rootPeers : []);
     rootStale = false;
-    return { roots: contentRoot ? [contentRoot, ...rootPeers] : [] };
+    return { roots: contentRoot ? [contentRoot, ...rootPeers] : [], retryInMs: 0 };
   }
 
+  // A batch of page mutations (MutationRecords). Starts a fresh pass and notes
+  // substantial text added outside the root (lazy-loaded comments, SPA shells):
+  // the root may be a stale, too-small container, so the next refresh()
+  // rescans. Returns false when there is no content root yet: the caller
+  // should refresh() rather than colour the added text.
+  function changed(mutations) {
+    beginPass();
+    if (!contentRoot) return false;
+    for (const m of mutations) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1 && !isLauncher(n) && !inRoots(n) && (n.textContent || '').length >= MIN_PAGE_PROSE) rootStale = true;
+      }
+    }
+    return true;
+  }
+
+  // Forget the content root (colouring stopped, or the page's <body> was
+  // replaced): the next refresh() scans the page afresh.
   function resetRoot() {
     contentRoot = null; rootPickedAt = 0; rootStale = false; rootPeers = []; bigPageMemo = null; blockOrder = null;
   }
 
-  const hasRoot = () => !!contentRoot;
+  // Text nodes under `root` worth queueing for colouring. A cheap pre-filter
+  // (in scope, not blank, root not skipped); isReadingText makes the real
+  // per-block decision when the text is coloured.
+  function candidateText(root) {
+    if (!root || (root.nodeType === 1 && (skipElement(root) || isNonContent(root)))) return [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && inContentRoot(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+    });
+    const out = [];
+    let n;
+    while ((n = walker.nextNode())) out.push(n);
+    return out;
+  }
 
-  // Substantial new text outside the root (lazy-loaded comments, SPA shells):
-  // the root may be a stale, too-small container; rescan on the next pass.
-  const noteAdded = (el) => {
-    if (contentRoot && !inRoots(el) && (el.textContent || '').length >= MIN_PAGE_PROSE) rootStale = true;
-  };
-
-  const isSkipped = (el) => skipElement(el) || isNonContent(el);
-
-  const api = { beginPass, ensureRoot, resetRoot, hasRoot, noteAdded, isSkipped, isBigPage, inScope: inContentRoot, isReadingText: acceptTextNode, editableLeaves: findGradientLeaves, extract: extractAllBlocks, sectionText, sectionStarts };
+  const api = { refresh, changed, resetRoot, candidateText, isReadingText: acceptTextNode, isBigPage, editableLeaves: findGradientLeaves, extract: extractAllBlocks, sectionText, sectionStarts };
   globalThis.BuzzlineReading = api;
 })();
