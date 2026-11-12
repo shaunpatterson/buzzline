@@ -22,7 +22,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/core.js", "src/settings.js", "src/schedule.js", "src/blocks.js", "src/reading.js", "src/sprint.js", "src/content.js"],
+      "js": ["src/core.js", "src/settings.js", "src/schedule.js", "src/gradient.js", "src/blocks.js", "src/reading.js", "src/sprint.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle",
       "all_frames": false

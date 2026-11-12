@@ -171,6 +171,7 @@ src/blocks.js          Block features: what a text block is and what the classif
 src/reading.js         Reading text: content root, reading runs, Reader/Sprint extraction
 src/schedule.js        Sprint schedule: chunks, ORP pivot and hold per chunk (pure, node-tested)
 src/sprint.js          RSVP reader overlay: renders the schedule, timer, keys, speed slider
+src/gradient.js        Line gradient: measured line fragments + palette -> coloured runs (pure, node-tested)
 src/background.js      Service worker: context menu + keyboard commands
 src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)

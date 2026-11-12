@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const { SCHEMES, hexToRgb, mix, rgbStr, parseCssColor, isDarkSurface, ensureContrast } = globalThis.BuzzlineCore;
+  const { SCHEMES, hexToRgb, rgbStr, parseCssColor, isDarkSurface, ensureContrast } = globalThis.BuzzlineCore;
+  const { planRuns } = globalThis.BuzzlineGradient;
   const { LAUNCHER_ATTR, isLauncher, inLink, nearestBlock, blockFeatures } = globalThis.BuzzlineBlocks;
   const R = globalThis.BuzzlineReading;
 
@@ -14,11 +15,10 @@
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
 
   // ---------- Highlight-API colouring (no DOM mutation) ----------
-  // Text is coloured with the CSS Custom Highlight API: each visual line is
-  // cut into STEPS runs, each run is a Range registered under a highlight
+  // Text is coloured with the CSS Custom Highlight API: each run planned by
+  // the Line gradient (gradient.js) is a Range registered under a highlight
   // name that encodes its colour. The page's DOM is never touched, so host
   // scripts' MutationObservers stay quiet and no relayout is ever forced.
-  const STEPS = 12;                       // colour steps per line
   const HL_PREFIX = 'bzln-';
   const hlSheet = new CSSStyleSheet();    // ::highlight() rules, added lazily
   const hlRules = new Set();
@@ -111,8 +111,8 @@
       return frags;
     }
 
-    // Colour one block: fragments of its own text nodes -> visual lines ->
-    // STEPS runs per line, each registered as a Range under a colour highlight.
+    // Colour one block: measure the line fragments of its own text nodes, let
+    // the Line gradient plan the coloured runs, register each run as a Range.
     function colourBlock(block) {
       const C = passCache;
       const isVertical = (b) => {
@@ -131,48 +131,20 @@
       if (!nodes.length) return false;
       const palette = paletteFor(block);
       const probe = document.createRange();
-      // 1) fragments in document order, grouped into visual lines
-      const lines = [];
-      let current = null, lastTop = null;
+      const fragments = [];
       for (const tn of nodes) {
         const linkRun = inLink(tn.parentElement);
-        for (const f of textFragments(tn, probe)) {
-          const top = f.rect.top, guard = Math.max(1, f.rect.height);
-          if (!current || lastTop === null || Math.abs(top - lastTop) > guard * 0.6) { current = []; lines.push(current); }
-          current.push({ node: tn, start: f.start, end: f.end, rect: f.rect, linkRun });
-          lastTop = top;
-        }
+        for (const f of textFragments(tn, probe)) fragments.push({ node: tn, start: f.start, end: f.end, rect: f.rect, linkRun });
       }
-      // 2) runs
       const out = [];
-      for (let li = 0; li < lines.length; li++) {
-        const line = lines[li];
-        const startC = palette[li % palette.length], endC = palette[(li + 1) % palette.length];
-        const left = Math.min(...line.map((f) => f.rect.left));
-        const width = Math.max(1, Math.max(...line.map((f) => f.rect.right)) - left);
-        for (const f of line) {
-          const len = f.end - f.start;
-          if (len <= 0) continue;
-          const x0 = f.rect.left, w = f.rect.width;
-          let runStart = f.start, runStep = -1;
-          for (let i = f.start; i <= f.end; i++) {
-            // position of char i's centre, linear within the fragment
-            const step = i === f.end ? -2 : Math.min(STEPS - 1, Math.max(0, Math.floor(((x0 + w * (i - f.start + 0.5) / len) - left) / width * STEPS)));
-            if (step !== runStep) {
-              if (runStep >= 0 && i > runStart) {
-                const c = mix(startC, endC, (runStep + 0.5) / STEPS);
-                const r = document.createRange(); r.setStart(f.node, runStart); r.setEnd(f.node, i);
-                highlightFor(c, f.linkRun).add(r);
-                out.push([HL_PREFIX + colourKey(c) + (f.linkRun ? '-l' : ''), r]);
-              }
-              runStart = i; runStep = step;
-            }
-          }
-        }
+      for (const run of planRuns(fragments, palette)) {
+        const r = document.createRange(); r.setStart(run.node, run.start); r.setEnd(run.node, run.end);
+        highlightFor(run.color, run.linkRun).add(r);
+        out.push([HL_PREFIX + colourKey(run.color) + (run.linkRun ? '-l' : ''), r]);
       }
       blockRanges.set(block, out);
       painted.add(block);
-      return lines.length > 0;
+      return fragments.length > 0;
     }
 
     function beginPass() {
