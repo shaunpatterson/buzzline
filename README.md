@@ -164,15 +164,18 @@ triggered an 830 ms task in GitHub's own scripts on the README.
 
 ```
 manifest.json          Chrome MV3 manifest
-src/content.js         Per-char span + gradient engine, block classifier, Sprint launchers, Reader
+src/content.js         Colouring session (Highlight API gradient), lifecycle, Sprint launchers, Reader
 src/core.js            Shared pure helpers: schemes, colour math, block model, Sprint tokenizer
+src/settings.js        Storage keys, defaults, validation and edits (shared by every page)
+src/blocks.js          Block features: what a text block is and what the classifier scores
+src/reading.js         Reading text: content root, reading runs, Reader/Sprint extraction
 src/sprint.js          RSVP reader overlay (ORP-aligned word flashing, chunking)
 src/background.js      Service worker: context menu + keyboard commands
 src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
 src/options.html/css/js Settings page (Sprint, coloring, blocked sites, feedback export)
-tests/core.test.js     Unit tests for core.js (`node --test`)
-tests/e2e/             Block collector, labelled dataset and model trainer
+tests/*.test.js        Unit tests (node) and fixture-page tests (headless Chrome)
+tests/e2e/             Fixture harness + pages, block collector, labelled dataset and model trainer
 scripts/build_firefox.js  Writes dist/firefox/ with a Firefox manifest (event page, gecko id)
 icons/                 Extension icons (cropped from assets/logo.png)
 scripts/gen_icons.py   Regenerates the icons (Pillow)
@@ -184,6 +187,11 @@ scripts/gen_icons.py   Regenerates the icons (Pillow)
 
 - No build step. Edit files, reload the extension in `chrome://extensions`,
   reload the page.
+- Tests: `node --test tests/*.test.js`. `tests/fixtures.test.js` loads the
+  content scripts into each page in `tests/e2e/fixtures/` with a fake `chrome`
+  in headless Chrome (no npm install; set `CHROME_PATH` if Chrome is not in a
+  standard place, skipped when none is found). Mark fixture elements
+  `data-expect="coloured"` or `data-expect="plain"`.
 - State lives in `chrome.storage.sync` under `enabled`, `scheme`,
   `disabledHosts`, `siteSchemes`, `linkUnderline`, `sprintWpm`, `sprintChunk`,
   `sprintDelays`; model feedback lives in `chrome.storage.local.feedback`.
