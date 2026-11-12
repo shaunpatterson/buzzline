@@ -74,3 +74,15 @@ test('article: feedback records whether the selected block was coloured', async 
   assert.deepEqual([no.verdict, no.coloured], ['not-body', false]);
   assert.ok(!('chain' in yes.f) && !('meta' in yes.f), 'stored features keep their shape');
 });
+
+test('article: Sprint flashes the page from its first chunk and closes when colouring stops', async (t) => {
+  if (!needChrome(t)) return;
+  // 150 wpm x 2 words = 800 ms on the first chunk: long enough to read it back.
+  const page = await h.open('article.html', { enabled: true, sprintWpm: 150, sprintChunk: 2 });
+  await page.send({ type: 'sprint-page' }); await page.settle(150);
+  const open = await page.snapshot();
+  assert.equal(open.sprintOpen, true);
+  assert.equal(open.sprintWord, "The committee's");
+  await page.setSync({ enabled: false }); await page.settle(300);
+  assert.equal((await page.snapshot()).sprintOpen, false);
+});

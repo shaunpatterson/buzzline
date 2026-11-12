@@ -5,46 +5,10 @@
   // flashes words one at a time with the Optimal Recognition Point (ORP)
   // highlighted and horizontally aligned so the eye stays still. Exposes
   // window.__bzlnSprint(text); a new call replaces any open session.
-
-  // Settings (chrome.storage.sync via BuzzlineSettings): sprintWpm, sprintChunk
-  // = words per flash (1-3), sprintDelays = { period, comma } hold multipliers
-  // at clause boundaries. Read once per build().
+  // What is flashed and for how long comes from the Sprint schedule
+  // (schedule.js); this file renders chunks and ticks the timer.
   const S = globalThis.BuzzlineSettings;
-  let settings = S.normalize({});
-
-  // Pivot rule — longer words put the ORP slightly further in.
-  function orpIndex(word) {
-    const n = word.length;
-    if (n <= 1) return 0;
-    if (n <= 5) return 1;
-    if (n <= 9) return 2;
-    if (n <= 13) return 3;
-    return 4;
-  }
-
-  // Hold longer on punctuation and on long words so readers catch clause
-  // boundaries. Multipliers are applied to the base WPM tick.
-  function delayMultiplier(word) {
-    if (/[.!?][")\]]?$/.test(word)) return settings.sprintDelays.period;
-    if (/[,;:][")\]]?$/.test(word)) return settings.sprintDelays.comma;
-    if (/[—–]$/.test(word)) return 1.5;
-    if (word.length > 9) return 1.3;
-    return 1;
-  }
-
-  // Group N words per flash. A clause-ending word closes its chunk early so
-  // punctuation holds still land where the reader expects them.
-  function chunkWords(words, n) {
-    if (n <= 1) return words;
-    const out = [];
-    let cur = [];
-    for (const w of words) {
-      cur.push(w);
-      if (cur.length >= n || /[.!?,;:][")\]]?$/.test(w)) { out.push(cur.join(' ')); cur = []; }
-    }
-    if (cur.length) out.push(cur.join(' '));
-    return out;
-  }
+  const { buildSchedule, holdMs } = globalThis.BuzzlineSchedule;
 
   let session = null;
   let buildToken = 0;
@@ -61,27 +25,23 @@
 
   function render() {
     if (!session) return;
-    const word = session.words[session.index];
-    const idx = orpIndex(word);
-    session.preEl.textContent = word.slice(0, idx);
-    session.orpEl.textContent = word[idx] || '';
-    session.postEl.textContent = word.slice(idx + 1);
+    const chunk = session.chunks[session.index];
+    session.preEl.textContent = chunk.pre;
+    session.orpEl.textContent = chunk.pivot;
+    session.postEl.textContent = chunk.post;
     session.counterEl.textContent =
-      `${session.index + 1} / ${session.words.length}`;
-    const pct = ((session.index + 1) / session.words.length) * 100;
+      `${session.index + 1} / ${session.chunks.length}`;
+    const pct = ((session.index + 1) / session.chunks.length) * 100;
     session.progressEl.style.width = pct.toFixed(2) + '%';
   }
 
   function step() {
     if (!session || !session.playing) return;
     render();
-    const word = session.words[session.index];
-    // A multi-word chunk gets time proportional to its word count.
-    const base = (60000 / session.wpm) * Math.max(1, word.split(' ').length);
-    const delay = base * delayMultiplier(word);
+    const delay = holdMs(session.chunks[session.index], session.wpm);
     session.timer = setTimeout(() => {
       if (!session) return;
-      if (session.index >= session.words.length - 1) {
+      if (session.index >= session.chunks.length - 1) {
         session.playing = false;
         session.playBtn.textContent = '▶';
         return;
@@ -94,7 +54,7 @@
   function play() {
     if (!session) return;
     if (session.playing) return;
-    if (session.index >= session.words.length - 1) session.index = 0;
+    if (session.index >= session.chunks.length - 1) session.index = 0;
     session.playing = true;
     session.playBtn.textContent = '⏸';
     step();
@@ -117,7 +77,7 @@
     pause();
     session.index = Math.max(
       0,
-      Math.min(session.words.length - 1, session.index + delta)
+      Math.min(session.chunks.length - 1, session.index + delta)
     );
     render();
   }
@@ -131,21 +91,18 @@
 
   function build(text) {
     close();
-    const tokens = globalThis.BuzzlineCore.tokenizeWords(text);
-    if (!tokens.length) return;
+    if (!globalThis.BuzzlineCore.tokenizeWords(text).length) return;
     const myToken = ++buildToken;
     const start = (s) => {
       // A later build() superseded this one — bail.
       if (myToken !== buildToken) return;
-      settings = s;
-      buildSession(text, chunkWords(tokens, s.sprintChunk), s.sprintWpm);
+      buildSession(buildSchedule(text, s), s.sprintWpm);
     };
     // Extension context invalidated (extension reloaded under the page): defaults.
     try { S.load(start); } catch { start(S.normalize({})); }
   }
 
-  function buildSession(text, words, startWpm) {
-
+  function buildSession(chunks, startWpm) {
     const root = el('div', 'bzln-sprint-root');
     const backdrop = el('div', 'bzln-sprint-backdrop');
     const card = el('div', 'bzln-sprint-card');
@@ -182,7 +139,7 @@
     const nextBtn = el('button', 'bzln-sprint-ctrl', '▶');
     nextBtn.type = 'button'; nextBtn.title = 'Next word (→)';
     nextBtn.style.transform = 'none';
-    const counter = el('div', 'bzln-sprint-counter', `1 / ${words.length}`);
+    const counter = el('div', 'bzln-sprint-counter', `1 / ${chunks.length}`);
     controls.appendChild(prevBtn);
     controls.appendChild(playBtn);
     controls.appendChild(nextBtn);
@@ -215,7 +172,7 @@
 
     session = {
       root,
-      words,
+      chunks,
       index: 0,
       wpm: startWpm,
       playing: false,

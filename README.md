@@ -169,7 +169,8 @@ src/core.js            Shared pure helpers: schemes, colour math, block model, S
 src/settings.js        Storage keys, defaults, validation and edits (shared by every page)
 src/blocks.js          Block features: what a text block is and what the classifier scores
 src/reading.js         Reading text: content root, reading runs, Reader/Sprint extraction
-src/sprint.js          RSVP reader overlay (ORP-aligned word flashing, chunking)
+src/schedule.js        Sprint schedule: chunks, ORP pivot and hold per chunk (pure, node-tested)
+src/sprint.js          RSVP reader overlay: renders the schedule, timer, keys, speed slider
 src/background.js      Service worker: context menu + keyboard commands
 src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
