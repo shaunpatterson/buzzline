@@ -4,7 +4,11 @@
 <script>
 setTimeout(() => {
   const s = 'The committee met on three occasions to discuss the proposal and its consequences for the region. Members disagreed about the cost. A vote was taken late in the evening. ';
-  document.getElementById('app').innerHTML = '<article><h1 data-expect="plain">Arrived late</h1>' +
+  const app = document.getElementById('app');
+  // tests/fixtures.test.js checks this: the late path is only exercised when
+  // the content scripts were already running before the prose arrived.
+  app.dataset.scriptsFirst = String(!!window.BuzzlineReading);
+  app.innerHTML = '<article><h1 data-expect="plain">Arrived late</h1>' +
     [1, 2, 3, 4, 5, 6].map((i) => '<p id="p' + i + '" data-expect="coloured">' + s.repeat(2) + '</p>').join('') + '</article>';
 }, 1500);
 </script>

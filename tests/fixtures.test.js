@@ -20,6 +20,12 @@ const expectationsHold = (snap) => {
   }
 };
 
+test('late.html: the prose arrived after the content scripts were running (late path really exercised)', async (t) => {
+  if (!needChrome(t)) return;
+  const page = await h.open('late.html');
+  assert.equal(await page.evaluate(`document.getElementById('app').dataset.scriptsFirst`), 'true');
+});
+
 for (const fixture of FIXTURES) {
   test(`${fixture}: every data-expect verdict holds`, async (t) => {
     if (!needChrome(t)) return;
