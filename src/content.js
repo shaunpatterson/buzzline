@@ -11,36 +11,7 @@
   let settings = S.normalize({});
   const currentHost = (location.hostname || '').toLowerCase();
   const LINK_CLASS = 'bzln-neutral-links';
-  const applyLinkStyle = () => {
-    document.documentElement.classList.toggle(LINK_CLASS, !!mo && settings.linkUnderline);
-  };
-  let mo = null;
-  let rootMo = null;
-  let observedBody = null;
-  let rootRetryTimer = null;
-  const pendingTimers = new Set();
-  let applyTimer = null;
-  let resizeTimer = null;
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
-  const onSchemeFlip = () => { if (settings.enabled) applyColors(); };
-
-  // Content root upkeep lives in reading.js; this side arms the trailing
-  // retry when a rescan is throttled and queues the new roots.
-  function ensureRoot() {
-    const r = R.ensureRoot();
-    if (!r) return;
-    if (r.retryInMs !== undefined) {
-      if (!rootRetryTimer) {
-        rootRetryTimer = trackTimer(setTimeout(() => {
-          pendingTimers.delete(rootRetryTimer);
-          rootRetryTimer = null;
-          if (settings.enabled) applyColors();
-        }, r.retryInMs));
-      }
-      return;
-    }
-    r.roots.forEach(processRoot);
-  }
 
   // ---------- Highlight-API colouring (no DOM mutation) ----------
   // Text is coloured with the CSS Custom Highlight API: each visual line is
@@ -51,125 +22,10 @@
   const HL_PREFIX = 'bzln-';
   const hlSheet = new CSSStyleSheet();    // ::highlight() rules, added lazily
   const hlRules = new Set();
-  const highlights = new Map();           // name -> Highlight
-  const blockRanges = new Map();          // block -> [[name, range], ...]
   const supportsHighlights = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight === 'function';
   if (supportsHighlights) document.adoptedStyleSheets = [...document.adoptedStyleSheets, hlSheet];
 
   const colourKey = (c) => `${c.r | 0}-${c.g | 0}-${c.b | 0}`;
-  function highlightFor(color, inLinkRun) {
-    const name = HL_PREFIX + colourKey(color) + (inLinkRun ? '-l' : '');
-    let h = highlights.get(name);
-    if (!h) {
-      h = new Highlight();
-      highlights.set(name, h);
-      CSS.highlights.set(name, h);
-      if (!hlRules.has(name)) {
-        hlRules.add(name);
-        const deco = inLinkRun && settings.linkUnderline ? ' text-decoration: underline; text-decoration-color: rgba(128,128,128,0.55);' : '';
-        hlSheet.insertRule(`::highlight(${name}) { color: ${rgbStr(color)};${deco} }`);
-      }
-    }
-    return h;
-  }
-  function clearBlock(block) {
-    const rs = blockRanges.get(block);
-    if (rs) for (const [name, r] of rs) { const h = highlights.get(name); if (h) h.delete(r); }
-    blockRanges.delete(block);
-  }
-  function clearAllHighlights() {
-    for (const name of highlights.keys()) CSS.highlights.delete(name);
-    highlights.clear();
-    blockRanges.clear();
-  }
-
-  // Line fragments of one text node: [{ start, end, rect }] by char offset.
-  // Range.getClientRects() gives one box per line box; the char boundary of
-  // each box is found by bisection on a probe range (O(lines * log n) rects).
-  function textFragments(node, range) {
-    const n = node.nodeValue.length;
-    range.selectNodeContents(node);
-    const boxes = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
-    if (!boxes.length) return [];
-    if (boxes.length === 1) return [{ start: 0, end: n, rect: boxes[0] }];
-    const topOf = (i) => { range.setStart(node, i); range.setEnd(node, i + 1); return range.getBoundingClientRect().top; };
-    const frags = [];
-    let start = 0;
-    for (let k = 1; k < boxes.length; k++) {
-      // first char offset whose box top reaches box k's top
-      const targetTop = boxes[k].top - 0.5;
-      let lo = start + 1, hi = n - 1;
-      while (lo < hi) { const mid = (lo + hi) >> 1; if (topOf(mid) >= targetTop) hi = mid; else lo = mid + 1; }
-      frags.push({ start, end: lo, rect: boxes[k - 1] });
-      start = lo;
-    }
-    frags.push({ start, end: n, rect: boxes[boxes.length - 1] });
-    return frags;
-  }
-
-  // Colour one block: fragments of its own text nodes -> visual lines ->
-  // STEPS runs per line, each registered as a Range under a colour highlight.
-  function colourBlock(block) {
-    const C = passCache;
-    const isVertical = (b) => {
-      const cached = C.verticalByBlock.get(b);
-      if (cached !== undefined) return cached;
-      const wm = (getComputedStyle(b).writingMode || '').toLowerCase();
-      const v = wm.startsWith('vertical') || wm.startsWith('sideways');
-      C.verticalByBlock.set(b, v);
-      return v;
-    };
-    clearBlock(block);
-    if (isVertical(block)) return false;
-    const set = blockNodes.get(block);
-    const nodes = set ? [...set].filter((tn) => tn.isConnected && R.isReadingText(tn)) : [];
-    for (const tn of (set || [])) if (!tn.isConnected) set.delete(tn);
-    if (!nodes.length) return false;
-    const palette = paletteFor(block);
-    const probe = document.createRange();
-    // 1) fragments in document order, grouped into visual lines
-    const lines = [];
-    let current = null, lastTop = null;
-    for (const tn of nodes) {
-      const linkRun = inLink(tn.parentElement);
-      for (const f of textFragments(tn, probe)) {
-        const top = f.rect.top, guard = Math.max(1, f.rect.height);
-        if (!current || lastTop === null || Math.abs(top - lastTop) > guard * 0.6) { current = []; lines.push(current); }
-        current.push({ node: tn, start: f.start, end: f.end, rect: f.rect, linkRun });
-        lastTop = top;
-      }
-    }
-    // 2) runs
-    const out = [];
-    for (let li = 0; li < lines.length; li++) {
-      const line = lines[li];
-      const startC = palette[li % palette.length], endC = palette[(li + 1) % palette.length];
-      const left = Math.min(...line.map((f) => f.rect.left));
-      const width = Math.max(1, Math.max(...line.map((f) => f.rect.right)) - left);
-      for (const f of line) {
-        const len = f.end - f.start;
-        if (len <= 0) continue;
-        const x0 = f.rect.left, w = f.rect.width;
-        let runStart = f.start, runStep = -1;
-        for (let i = f.start; i <= f.end; i++) {
-          // position of char i's centre, linear within the fragment
-          const step = i === f.end ? -2 : Math.min(STEPS - 1, Math.max(0, Math.floor(((x0 + w * (i - f.start + 0.5) / len) - left) / width * STEPS)));
-          if (step !== runStep) {
-            if (runStep >= 0 && i > runStart) {
-              const c = mix(startC, endC, (runStep + 0.5) / STEPS);
-              const r = document.createRange(); r.setStart(f.node, runStart); r.setEnd(f.node, i);
-              highlightFor(c, f.linkRun).add(r);
-              out.push([HL_PREFIX + colourKey(c) + (f.linkRun ? '-l' : ''), r]);
-            }
-            runStart = i; runStep = step;
-          }
-        }
-      }
-    }
-    blockRanges.set(block, out);
-    painted.add(block);
-    return lines.length > 0;
-  }
 
   // ---------- Incremental pipeline ----------
   // Work is per block. processRoot() only *finds* prose blocks and queues
@@ -179,167 +35,415 @@
   const SYNC_BUDGET_MS = 40;      // first paint: how long we may block
   const SLICE_MS = 12;            // idle slices after that
   const NEAR_PX = () => (window.innerHeight || 800) * 1.5;
-  const blockNodes = new Map();   // block -> Set of its queued text nodes
-  const pending = new Set();      // blocks waiting to be (re)coloured
-  const painted = new Set();      // blocks currently carrying highlights
-  let pumpHandle = null;
-  let passCache = null;           // per colouring pass caches (see beginPass)
 
-  function beginPass() {
-    const scheme = SCHEMES[S.effectiveScheme(settings, currentHost)];
-    passCache = {
-      palettes: { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) },
-      blockByParent: new Map(), verticalByBlock: new Map(), bgByEl: new Map(), paletteByBlock: new Map()
+  // ---------- Colouring session ----------
+  // Everything whose lifetime is "colouring is enabled": highlights, queues,
+  // observers, listeners and timers. stop() tears it all down; the closure is
+  // then dropped, so no field needs resetting by hand.
+  function startSession() {
+    const highlights = new Map();           // name -> Highlight
+    const blockRanges = new Map();          // block -> [[name, range], ...]
+    const blockNodes = new Map();   // block -> Set of its queued text nodes
+    const pending = new Set();      // blocks waiting to be (re)coloured
+    const painted = new Set();      // blocks currently carrying highlights
+    const stale = new Set();      // painted blocks whose colour is out of date (big pages)
+    let order = [];               // pending blocks, nearest-first; rebuilt when stale
+    let orderStale = true;
+    let pumpHandle = null;
+    let passCache = null;           // per colouring pass caches (see beginPass)
+    let mo = null;
+    let rootMo = null;
+    let observedBody = null;
+    const pendingTimers = new Set();
+    let applyTimer = null;
+    let resizeTimer = null;
+    let scrollTimer = null;
+    let rootRetryTimer = null;
+    let stopped = false;
+
+    function highlightFor(color, inLinkRun) {
+      const name = HL_PREFIX + colourKey(color) + (inLinkRun ? '-l' : '');
+      let h = highlights.get(name);
+      if (!h) {
+        h = new Highlight();
+        highlights.set(name, h);
+        CSS.highlights.set(name, h);
+        if (!hlRules.has(name)) {
+          hlRules.add(name);
+          const deco = inLinkRun && settings.linkUnderline ? ' text-decoration: underline; text-decoration-color: rgba(128,128,128,0.55);' : '';
+          hlSheet.insertRule(`::highlight(${name}) { color: ${rgbStr(color)};${deco} }`);
+        }
+      }
+      return h;
+    }
+    function clearBlock(block) {
+      const rs = blockRanges.get(block);
+      if (rs) for (const [name, r] of rs) { const h = highlights.get(name); if (h) h.delete(r); }
+      blockRanges.delete(block);
+    }
+    function clearAllHighlights() {
+      for (const name of highlights.keys()) CSS.highlights.delete(name);
+      highlights.clear();
+      blockRanges.clear();
+    }
+
+    // Line fragments of one text node: [{ start, end, rect }] by char offset.
+    // Range.getClientRects() gives one box per line box; the char boundary of
+    // each box is found by bisection on a probe range (O(lines * log n) rects).
+    function textFragments(node, range) {
+      const n = node.nodeValue.length;
+      range.selectNodeContents(node);
+      const boxes = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+      if (!boxes.length) return [];
+      if (boxes.length === 1) return [{ start: 0, end: n, rect: boxes[0] }];
+      const topOf = (i) => { range.setStart(node, i); range.setEnd(node, i + 1); return range.getBoundingClientRect().top; };
+      const frags = [];
+      let start = 0;
+      for (let k = 1; k < boxes.length; k++) {
+        // first char offset whose box top reaches box k's top
+        const targetTop = boxes[k].top - 0.5;
+        let lo = start + 1, hi = n - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (topOf(mid) >= targetTop) hi = mid; else lo = mid + 1; }
+        frags.push({ start, end: lo, rect: boxes[k - 1] });
+        start = lo;
+      }
+      frags.push({ start, end: n, rect: boxes[boxes.length - 1] });
+      return frags;
+    }
+
+    // Colour one block: fragments of its own text nodes -> visual lines ->
+    // STEPS runs per line, each registered as a Range under a colour highlight.
+    function colourBlock(block) {
+      const C = passCache;
+      const isVertical = (b) => {
+        const cached = C.verticalByBlock.get(b);
+        if (cached !== undefined) return cached;
+        const wm = (getComputedStyle(b).writingMode || '').toLowerCase();
+        const v = wm.startsWith('vertical') || wm.startsWith('sideways');
+        C.verticalByBlock.set(b, v);
+        return v;
+      };
+      clearBlock(block);
+      if (isVertical(block)) return false;
+      const set = blockNodes.get(block);
+      const nodes = set ? [...set].filter((tn) => tn.isConnected && R.isReadingText(tn)) : [];
+      for (const tn of (set || [])) if (!tn.isConnected) set.delete(tn);
+      if (!nodes.length) return false;
+      const palette = paletteFor(block);
+      const probe = document.createRange();
+      // 1) fragments in document order, grouped into visual lines
+      const lines = [];
+      let current = null, lastTop = null;
+      for (const tn of nodes) {
+        const linkRun = inLink(tn.parentElement);
+        for (const f of textFragments(tn, probe)) {
+          const top = f.rect.top, guard = Math.max(1, f.rect.height);
+          if (!current || lastTop === null || Math.abs(top - lastTop) > guard * 0.6) { current = []; lines.push(current); }
+          current.push({ node: tn, start: f.start, end: f.end, rect: f.rect, linkRun });
+          lastTop = top;
+        }
+      }
+      // 2) runs
+      const out = [];
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
+        const startC = palette[li % palette.length], endC = palette[(li + 1) % palette.length];
+        const left = Math.min(...line.map((f) => f.rect.left));
+        const width = Math.max(1, Math.max(...line.map((f) => f.rect.right)) - left);
+        for (const f of line) {
+          const len = f.end - f.start;
+          if (len <= 0) continue;
+          const x0 = f.rect.left, w = f.rect.width;
+          let runStart = f.start, runStep = -1;
+          for (let i = f.start; i <= f.end; i++) {
+            // position of char i's centre, linear within the fragment
+            const step = i === f.end ? -2 : Math.min(STEPS - 1, Math.max(0, Math.floor(((x0 + w * (i - f.start + 0.5) / len) - left) / width * STEPS)));
+            if (step !== runStep) {
+              if (runStep >= 0 && i > runStart) {
+                const c = mix(startC, endC, (runStep + 0.5) / STEPS);
+                const r = document.createRange(); r.setStart(f.node, runStart); r.setEnd(f.node, i);
+                highlightFor(c, f.linkRun).add(r);
+                out.push([HL_PREFIX + colourKey(c) + (f.linkRun ? '-l' : ''), r]);
+              }
+              runStart = i; runStep = step;
+            }
+          }
+        }
+      }
+      blockRanges.set(block, out);
+      painted.add(block);
+      return lines.length > 0;
+    }
+
+    function beginPass() {
+      const scheme = SCHEMES[S.effectiveScheme(settings, currentHost)];
+      passCache = {
+        palettes: { light: scheme.light.map(hexToRgb), dark: scheme.dark.map(hexToRgb) },
+        blockByParent: new Map(), verticalByBlock: new Map(), bgByEl: new Map(), paletteByBlock: new Map()
+      };
+    }
+
+    function processRoot(root) {
+      if (!root) return;
+      if (root.nodeType === 1 && R.isSkipped(root)) return;
+      const walker = document.createTreeWalker(
+        root,
+        NodeFilter.SHOW_TEXT,
+        // Cheap pre-filter only; the real checks (classifier, self-colour, skip
+        // ancestors) run per block in colourBlock, inside the time slices.
+        { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && R.inScope(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
+      );
+      let n;
+      while ((n = walker.nextNode())) queueTextNode(n);
+    }
+
+    // Remember a text node under its block and queue the block for colouring.
+    function queueTextNode(n) {
+      const block = nearestBlock(n.parentElement);
+      let set = blockNodes.get(block);
+      if (!set) { set = new Set(); blockNodes.set(block, set); }
+      set.add(n);
+      if (!pending.has(block)) { pending.add(block); markQueueChanged(); }
+    }
+
+    const distanceToViewport = (block) => {
+      const r = block.getBoundingClientRect();
+      const vh = window.innerHeight || 800;
+      if (r.bottom < 0) return -r.bottom;
+      if (r.top > vh) return r.top - vh;
+      return 0;
     };
-  }
 
-  function processRoot(root) {
-    if (!root) return;
-    if (root.nodeType === 1 && R.isSkipped(root)) return;
-    const walker = document.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      // Cheap pre-filter only; the real checks (classifier, self-colour, skip
-      // ancestors) run per block in colourBlock, inside the time slices.
-      { acceptNode: (n) => n.nodeValue && n.nodeValue.trim() && n.parentElement && R.inScope(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
-    );
-    let n;
-    while ((n = walker.nextNode())) queueTextNode(n);
-  }
-
-  // Remember a text node under its block and queue the block for colouring.
-  function queueTextNode(n) {
-    const block = nearestBlock(n.parentElement);
-    let set = blockNodes.get(block);
-    if (!set) { set = new Set(); blockNodes.set(block, set); }
-    set.add(n);
-    if (!pending.has(block)) { pending.add(block); markQueueChanged(); }
-  }
-
-  const distanceToViewport = (block) => {
-    const r = block.getBoundingClientRect();
-    const vh = window.innerHeight || 800;
-    if (r.bottom < 0) return -r.bottom;
-    if (r.top > vh) return r.top - vh;
-    return 0;
-  };
-
-
-  // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
-  function surfaceBg(el) {
-    if (!el) return null;
-    const C = passCache;
-    if (C.bgByEl.has(el)) return C.bgByEl.get(el);
-    const c = parseCssColor(getComputedStyle(el).backgroundColor);
-    const v = c && c.a >= 0.5 ? c : surfaceBg(el.parentElement);
-    C.bgByEl.set(el, v);
-    return v;
-  }
-  function paletteFor(block) {
-    const C = passCache;
-    let p = C.paletteByBlock.get(block);
-    if (!p) {
-      // Gradient leaves are painted with color:transparent; ignore that.
-      const tc = parseCssColor(getComputedStyle(block).color);
-      const bg = surfaceBg(block);
-      const dark = isDarkSurface(bg, tc && tc.a > 0 ? tc : null);
-      // Mid-tone surfaces (grey cards, tinted callouts) can leave either
-      // variant below 4.5:1; nudge lightness only as far as needed.
-      p = ensureContrast(dark ? C.palettes.dark : C.palettes.light, bg);
-      C.paletteByBlock.set(block, p);
+    // Nearest ancestor-or-self background with alpha >= 0.5; null if none.
+    function surfaceBg(el) {
+      if (!el) return null;
+      const C = passCache;
+      if (C.bgByEl.has(el)) return C.bgByEl.get(el);
+      const c = parseCssColor(getComputedStyle(el).backgroundColor);
+      const v = c && c.a >= 0.5 ? c : surfaceBg(el.parentElement);
+      C.bgByEl.set(el, v);
+      return v;
     }
-    return p;
-  }
-
-  // Drain `pending` nearest-first until the budget is spent; reschedule the
-  // rest as idle work. When the queue empties, mount launchers and gradients.
-  let order = [];               // pending blocks, nearest-first; rebuilt when stale
-  let orderStale = true;
-  const markQueueChanged = () => { orderStale = true; };
-  const stale = new Set();      // painted blocks whose colour is out of date (big pages)
-  function pump(budgetMs, visibleOnly = false) {
-    const t0 = performance.now();
-    if (orderStale) {
-      for (const b of pending) if (!b.isConnected) { pending.delete(b); painted.delete(b); stale.delete(b); blockNodes.delete(b); }
-      const scored = [...pending].map((b) => [distanceToViewport(b), b]).sort((a, b) => a[0] - b[0]);
-      // Huge pages: only colour blocks within reach of the viewport (bounded
-      // number of live Ranges); the rest wait in `pending` for onScroll.
-      const far = R.isBigPage() ? NEAR_PX() * 2 : Infinity;
-      order = scored.filter((x) => x[0] <= far);
-      orderStale = false;
+    function paletteFor(block) {
+      const C = passCache;
+      let p = C.paletteByBlock.get(block);
+      if (!p) {
+        // Gradient leaves are painted with color:transparent; ignore that.
+        const tc = parseCssColor(getComputedStyle(block).color);
+        const bg = surfaceBg(block);
+        const dark = isDarkSurface(bg, tc && tc.a > 0 ? tc : null);
+        // Mid-tone surfaces (grey cards, tinted callouts) can leave either
+        // variant below 4.5:1; nudge lightness only as far as needed.
+        p = ensureContrast(dark ? C.palettes.dark : C.palettes.light, bg);
+        C.paletteByBlock.set(block, p);
+      }
+      return p;
     }
-    while (order.length) {
-      if (performance.now() - t0 > budgetMs) break;
-      // Synchronous first pass: stop at the first block outside the viewport;
-      // everything else goes to idle slices.
-      if (visibleOnly && order[0][0] > 0) break;
-      const block = order.shift()[1];
-      if (!pending.has(block)) continue;
-      pending.delete(block);
-      if (!colourBlock(block)) painted.delete(block);
-    }
-    if (order.length) schedulePump();
-    else finishPass();              // everything in range is done; far blocks wait for scroll
-  }
-  function schedulePump() {
-    if (pumpHandle !== null) return;
-    const run = () => { pumpHandle = null; if (settings.enabled && mo) pump(SLICE_MS); };
-    pumpHandle = window.requestIdleCallback ? requestIdleCallback(run, { timeout: 250 }) : setTimeout(run, 16);
-  }
-  function cancelPump() {
-    if (pumpHandle === null) return;
-    if (window.requestIdleCallback) cancelIdleCallback(pumpHandle); else clearTimeout(pumpHandle);
-    pumpHandle = null;
-  }
-  function finishPass() {
-    syncLaunchers(painted);
-    applyGradientBlocks(paletteFor);
-  }
 
-  // Full (re)colour: everything that has spans gets re-measured. Nearest
-  // blocks are done synchronously within SYNC_BUDGET_MS, the rest in idle
-  // time. On big pages only blocks near the viewport are re-queued; the rest
-  // are marked stale and picked up as the user scrolls towards them.
-  function applyColors() {
-    R.beginPass();
-    ensureRoot();
-    beginPass();
-    const big = R.isBigPage();
-    const near = NEAR_PX() * 2;
-    for (const b of painted) {
-      if (pending.has(b)) continue;
-      if (big && distanceToViewport(b) > near) stale.add(b); else { pending.add(b); stale.delete(b); }
+    // Drain `pending` nearest-first until the budget is spent; reschedule the
+    // rest as idle work. When the queue empties, mount launchers and gradients.
+    const markQueueChanged = () => { orderStale = true; };
+    function pump(budgetMs, visibleOnly = false) {
+      const t0 = performance.now();
+      if (orderStale) {
+        for (const b of pending) if (!b.isConnected) { pending.delete(b); painted.delete(b); stale.delete(b); blockNodes.delete(b); }
+        const scored = [...pending].map((b) => [distanceToViewport(b), b]).sort((a, b) => a[0] - b[0]);
+        // Huge pages: only colour blocks within reach of the viewport (bounded
+        // number of live Ranges); the rest wait in `pending` for onScroll.
+        const far = R.isBigPage() ? NEAR_PX() * 2 : Infinity;
+        order = scored.filter((x) => x[0] <= far);
+        orderStale = false;
+      }
+      while (order.length) {
+        if (performance.now() - t0 > budgetMs) break;
+        // Synchronous first pass: stop at the first block outside the viewport;
+        // everything else goes to idle slices.
+        if (visibleOnly && order[0][0] > 0) break;
+        const block = order.shift()[1];
+        if (!pending.has(block)) continue;
+        pending.delete(block);
+        if (!colourBlock(block)) painted.delete(block);
+      }
+      if (order.length) schedulePump();
+      else finishPass();              // everything in range is done; far blocks wait for scroll
     }
-    markQueueChanged();
-    cancelPump();
-    pump(SYNC_BUDGET_MS, true);
-  }
-  let scrollTimer = null;
-  function onScroll() {
-    if ((!stale.size && !pending.size) || scrollTimer) return;
-    scrollTimer = setTimeout(() => {
-      scrollTimer = null;
-      if (!settings.enabled || !mo) return;
-      const near = NEAR_PX();
-      let added = 0;
-      for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.add(b); added++; } }
-      if (added || pending.size) { markQueueChanged(); schedulePump(); }
-    }, 150);
-  }
+    function schedulePump() {
+      if (pumpHandle !== null) return;
+      const run = () => { pumpHandle = null; if (!stopped) pump(SLICE_MS); };
+      pumpHandle = window.requestIdleCallback ? requestIdleCallback(run, { timeout: 250 }) : setTimeout(run, 16);
+    }
+    function cancelPump() {
+      if (pumpHandle === null) return;
+      if (window.requestIdleCallback) cancelIdleCallback(pumpHandle); else clearTimeout(pumpHandle);
+      pumpHandle = null;
+    }
+    function finishPass() {
+      syncLaunchers(painted);
+      applyGradientBlocks(paletteFor);
+    }
 
-  function unprocessAll() {
-    if (supportsHighlights) clearAllHighlights();
-    const launchers = document.querySelectorAll(`[${LAUNCHER_ATTR}]`);
-    for (const l of launchers) l.remove();
-    const grad = document.querySelectorAll(`[${GRAD_ATTR}]`);
-    for (const el of grad) clearGradientStyle(el);
-    closeReader();
-    cancelPump();
-    pending.clear();
-    painted.clear();
-    stale.clear();
-    blockNodes.clear();
-    markQueueChanged();
+    // Full (re)colour: everything that has spans gets re-measured. Nearest
+    // blocks are done synchronously within SYNC_BUDGET_MS, the rest in idle
+    // time. On big pages only blocks near the viewport are re-queued; the rest
+    // are marked stale and picked up as the user scrolls towards them.
+    function applyColors() {
+      R.beginPass();
+      ensureRoot();
+      beginPass();
+      const big = R.isBigPage();
+      const near = NEAR_PX() * 2;
+      for (const b of painted) {
+        if (pending.has(b)) continue;
+        if (big && distanceToViewport(b) > near) stale.add(b); else { pending.add(b); stale.delete(b); }
+      }
+      markQueueChanged();
+      cancelPump();
+      pump(SYNC_BUDGET_MS, true);
+    }
+    function onScroll() {
+      if ((!stale.size && !pending.size) || scrollTimer) return;
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        if (stopped) return;
+        const near = NEAR_PX();
+        let added = 0;
+        for (const b of stale) if (!b.isConnected || distanceToViewport(b) <= near) { stale.delete(b); if (b.isConnected) { pending.add(b); added++; } }
+        if (added || pending.size) { markQueueChanged(); schedulePump(); }
+      }, 150);
+    }
+    function onResize() {
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+        pendingTimers.delete(resizeTimer);
+      }
+      resizeTimer = trackTimer(setTimeout(() => {
+        pendingTimers.delete(resizeTimer);
+        resizeTimer = null;
+        if (!stopped) applyColors();
+      }, 120));
+    }
+    const onSchemeFlip = () => { if (!stopped) applyColors(); };
+
+    function trackTimer(id) { pendingTimers.add(id); return id; }
+
+    function scheduleApply() {
+      if (applyTimer) return;
+      applyTimer = trackTimer(setTimeout(() => {
+        pendingTimers.delete(applyTimer);
+        applyTimer = null;
+        if (!stopped) applyColors();
+      }, 40));
+    }
+
+    // Content root upkeep lives in reading.js; this side arms the trailing
+    // retry when a rescan is throttled and queues the new roots.
+    function ensureRoot() {
+      const r = R.ensureRoot();
+      if (!r) return;
+      if (r.retryInMs !== undefined) {
+        if (!rootRetryTimer) {
+          rootRetryTimer = trackTimer(setTimeout(() => {
+            pendingTimers.delete(rootRetryTimer);
+            rootRetryTimer = null;
+            if (!stopped) applyColors();
+          }, r.retryInMs));
+        }
+        return;
+      }
+      r.roots.forEach(processRoot);
+    }
+
+    function startObserving() {
+      if (mo) mo.disconnect();
+      observedBody = document.body;
+      mo = new MutationObserver((muts) => {
+        R.beginPass();
+        if (!R.hasRoot()) { scheduleApply(); return; }
+        let structureChanged = false;
+        for (const m of muts) {
+          if (m.type === 'childList') {
+            let ours = true;
+            for (const node of m.addedNodes) {
+              if (node.nodeType === 1) {
+                if (!isLauncher(node)) ours = false;
+                if (!isLauncher(node)) R.noteAdded(node);
+                processRoot(node);
+              } else if (node.nodeType === 3) {
+                ours = false;
+                if (R.isReadingText(node)) queueTextNode(node);
+              } else {
+                ours = false;
+              }
+            }
+            for (const node of m.removedNodes) {
+              if (node.nodeType === 1 && isLauncher(node)) continue;
+              ours = false;
+            }
+            // External structural change may alter line wrapping — recolor.
+            if (!ours && (m.addedNodes.length || m.removedNodes.length)) {
+              structureChanged = true;
+            }
+          } else if (m.type === 'characterData') {
+            const target = m.target;
+            if (target.nodeType === 3 && R.isReadingText(target)) {
+              queueTextNode(target);
+              structureChanged = true;
+            }
+          }
+        }
+        if (structureChanged) scheduleApply();
+      });
+      mo.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+
+    applyColors();
+    startObserving();
+    // SPA/Turbo navigations can swap the <body> element wholesale; the body
+    // observer would stay on the detached node. Watch <html>'s direct
+    // children (no subtree) so overlays appended there hit the early return.
+    rootMo = new MutationObserver(() => {
+      if (!document.body || document.body === observedBody) return;
+      R.resetRoot();
+      applyColors();
+      startObserving();
+    });
+    rootMo.observe(document.documentElement, { childList: true });
+    window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    darkMq.addEventListener('change', onSchemeFlip);
+    // Late layout shifts (webfonts, images) change line wrapping after the
+    // initial paint. Re-apply twice to catch them.
+    trackTimer(setTimeout(() => { if (!stopped) applyColors(); }, 500));
+    trackTimer(setTimeout(() => { if (!stopped) applyColors(); }, 1500));
+
+    return {
+      repaint: applyColors,
+      // The Reader overlay is appended to <html>, outside the body observer.
+      paintOverlay(el) { processRoot(el); applyColors(); },
+      isPainted: (block) => painted.has(block),
+      isColoured(node) {
+        const rs = node && node.parentElement && blockRanges.get(nearestBlock(node.parentElement));
+        return !!rs && rs.some(([, r]) => r.startContainer === node);
+      },
+      stop() {
+        stopped = true;
+        mo.disconnect();
+        rootMo.disconnect();
+        cancelPump();
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('scroll', onScroll);
+        darkMq.removeEventListener('change', onSchemeFlip);
+        clearTimeout(scrollTimer);
+        for (const t of pendingTimers) clearTimeout(t);
+        clearAllHighlights();
+        for (const l of document.querySelectorAll(`[${LAUNCHER_ATTR}]`)) l.remove();
+        for (const el of document.querySelectorAll(`[${GRAD_ATTR}]`)) clearGradientStyle(el);
+      }
+    };
   }
 
   function clearGradientStyle(el) {
@@ -541,10 +645,7 @@
     // Appended to <html> to escape page CSS (filter/opacity/etc.), which
     // means the body-scoped MutationObserver won't see it. Process + paint
     // the overlay explicitly so its paragraphs pick up per-char coloring.
-    if (settings.enabled) {
-      processRoot(body);
-      applyColors();
-    }
+    if (session) session.paintOverlay(body);
   }
 
   function closeReader() {
@@ -557,122 +658,31 @@
     readerState = null;
   }
 
-  function trackTimer(id) { pendingTimers.add(id); return id; }
+  // ---------- Lifecycle ----------
+  let session = null;   // live colouring session while enabled, else null
 
-  function scheduleApply() {
-    if (applyTimer) return;
-    applyTimer = trackTimer(setTimeout(() => {
-      pendingTimers.delete(applyTimer);
-      applyTimer = null;
-      if (settings.enabled) applyColors();
-    }, 40));
-  }
-
-  function onResize() {
-    if (resizeTimer) {
-      clearTimeout(resizeTimer);
-      pendingTimers.delete(resizeTimer);
-    }
-    resizeTimer = trackTimer(setTimeout(() => {
-      pendingTimers.delete(resizeTimer);
-      resizeTimer = null;
-      if (settings.enabled) applyColors();
-    }, 120));
-  }
-
-  function startObserving() {
-    if (mo) mo.disconnect();
-    observedBody = document.body;
-    mo = new MutationObserver((muts) => {
-      R.beginPass();
-      if (!R.hasRoot()) { scheduleApply(); return; }
-      let structureChanged = false;
-      for (const m of muts) {
-        if (m.type === 'childList') {
-          let ours = true;
-          for (const node of m.addedNodes) {
-            if (node.nodeType === 1) {
-              if (!isLauncher(node)) ours = false;
-              if (!isLauncher(node)) R.noteAdded(node);
-              processRoot(node);
-            } else if (node.nodeType === 3) {
-              ours = false;
-              if (R.isReadingText(node)) queueTextNode(node);
-            } else {
-              ours = false;
-            }
-          }
-          for (const node of m.removedNodes) {
-            if (node.nodeType === 1 && isLauncher(node)) continue;
-            ours = false;
-          }
-          // External structural change may alter line wrapping — recolor.
-          if (!ours && (m.addedNodes.length || m.removedNodes.length)) {
-            structureChanged = true;
-          }
-        } else if (m.type === 'characterData') {
-          const target = m.target;
-          if (target.nodeType === 3 && R.isReadingText(target)) {
-            queueTextNode(target);
-            structureChanged = true;
-          }
-        }
-      }
-      if (structureChanged) scheduleApply();
-    });
-    mo.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
-  }
+  const applyLinkStyle = () => {
+    document.documentElement.classList.toggle(LINK_CLASS, !!session && settings.linkUnderline);
+  };
 
   function enable() {
-    if (mo) return; // already enabled
+    if (session) return; // already enabled
     if (!supportsHighlights) { console.warn('[Buzzline] CSS Custom Highlight API unavailable; colouring disabled'); return; }
     if (!document.body) {
-      document.addEventListener('DOMContentLoaded', enable, { once: true });
+      document.addEventListener('DOMContentLoaded', applyEnabledState, { once: true });
       return;
     }
-    applyColors();
-    startObserving();
-    // SPA/Turbo navigations can swap the <body> element wholesale; the body
-    // observer would stay on the detached node. Watch <html>'s direct
-    // children (no subtree) so overlays appended there hit the early return.
-    rootMo = new MutationObserver(() => {
-      if (!document.body || document.body === observedBody) return;
-      R.resetRoot();
-      applyColors();
-      startObserving();
-    });
-    rootMo.observe(document.documentElement, { childList: true });
-    window.addEventListener('resize', onResize);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    darkMq.addEventListener('change', onSchemeFlip);
+    session = startSession();
     applyLinkStyle();
-    // Late layout shifts (webfonts, images) change line wrapping after the
-    // initial paint. Re-apply twice to catch them.
-    trackTimer(setTimeout(() => { if (settings.enabled) applyColors(); }, 500));
-    trackTimer(setTimeout(() => { if (settings.enabled) applyColors(); }, 1500));
   }
 
   function disable() {
-    if (mo) { mo.disconnect(); mo = null; }
-    cancelPump();
-    if (rootMo) { rootMo.disconnect(); rootMo = null; }
-    observedBody = null;
+    if (!session) return;
+    session.stop();
+    session = null;
     R.resetRoot();
-    rootRetryTimer = null;
-    window.removeEventListener('resize', onResize);
-    window.removeEventListener('scroll', onScroll);
-    if (scrollTimer) { clearTimeout(scrollTimer); scrollTimer = null; }
-    darkMq.removeEventListener('change', onSchemeFlip);
     document.documentElement.classList.remove(LINK_CLASS);
-    for (const t of pendingTimers) clearTimeout(t);
-    pendingTimers.clear();
-    applyTimer = null;
-    resizeTimer = null;
-    unprocessAll();
+    closeReader();
     if (typeof window.__bzlnSprintClose === 'function') {
       window.__bzlnSprintClose();
     }
@@ -680,8 +690,8 @@
 
   function applyEnabledState() {
     const shouldRun = settings.enabled && !S.isHostDisabled(settings, currentHost);
-    if (shouldRun && !mo) enable();
-    else if (!shouldRun && mo) disable();
+    if (shouldRun) enable();
+    else disable();
   }
 
   S.load((s) => { settings = s; applyEnabledState(); });
@@ -707,7 +717,7 @@
     const block = nearestBlock(el);
     const full = blockFeatures(block);
     const { chain, meta, ...f } = full;
-    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: painted.has(block), score: +globalThis.BuzzlineCore.blockScore(full).toFixed(3), meta, f };
+    const entry = { ts: Date.now(), host: currentHost, verdict: verdict === 'yes' ? 'body' : 'not-body', coloured: !!session && session.isPainted(block), score: +globalThis.BuzzlineCore.blockScore(full).toFixed(3), meta, f };
     chrome.storage.local.get(['feedback'], (s) => {
       const list = Array.isArray(s.feedback) ? s.feedback : [];
       list.push(entry);
@@ -719,10 +729,10 @@
     if (area !== 'sync') return;
     settings = S.merge(settings, changes);
     if ('scheme' in changes || 'siteSchemes' in changes) {
-      if (mo) applyColors();
+      if (session) session.repaint();
     }
     if ('linkUnderline' in changes) {
-      if (mo) applyLinkStyle();
+      if (session) applyLinkStyle();
     }
     if ('enabled' in changes) {
       applyEnabledState();
@@ -733,8 +743,5 @@
   });
 
   // e2e harness hook (tests/e2e/collector.js): is this text node coloured?
-  window.__bzlnIsColoured = (node) => {
-    const rs = node && node.parentElement && blockRanges.get(nearestBlock(node.parentElement));
-    return !!rs && rs.some(([, r]) => r.startContainer === node);
-  };
+  window.__bzlnIsColoured = (node) => !!session && session.isColoured(node);
 })();
