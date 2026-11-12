@@ -2,7 +2,8 @@
 // expression in the world where the content scripts run (core.js, blocks.js,
 // content.js loaded). Returns every counting block (visible, >= 30 chars; see
 // BuzzlineBlocks.blockStats) with the exact feature object the live classifier
-// scores, plus the share of its text the extension coloured (`coloured`, 0..1).
+// scores, plus the share of its text the extension coloured (`coloured`, 0..1,
+// from the window.__bzlnIsColoured hook defined by src/content.js).
 (() => {
   const B = window.BuzzlineBlocks;
   B.reset();
@@ -16,7 +17,7 @@
     const b = B.nearestBlock(p);
     let r = per.get(b); if (!r) { r = { total: 0, coloured: 0 }; per.set(b, r); }
     r.total += n.nodeValue.length;
-    if (window.__bzlnIsColoured && window.__bzlnIsColoured(n)) r.coloured += n.nodeValue.length;
+    if (window.__bzlnIsColoured(n)) r.coloured += n.nodeValue.length;
   }
   const blocks = [];
   for (const [el, r] of per) {
