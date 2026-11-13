@@ -198,8 +198,11 @@
   const sentencesOf = (b) => (blockStats(b).text.match(SENTENCE_END_RX) || []).length;
   // Hysteresis: blocks scoring a little under the model threshold (a short
   // reader comment next to long ones) still count, but only inside a run that
-  // reaches the reading length on its own merits. The run itself must
-  // contain at least one block the model accepts outright.
+  // reaches the reading length on its own merits, and only if they hold at
+  // least one sentence: a sentence-less blurb under a profile heading or card
+  // title ("Delivering inference to AI-native companies") is a label, not a
+  // comment. The run itself must contain at least one block the model
+  // accepts outright.
   const NEAR_PROSE = 0.12;
   let nearMemo = new WeakMap();
   function isReadingCandidate(block) {
@@ -207,7 +210,7 @@
     let v = nearMemo.get(block);
     if (v === undefined) {
       v = block !== document.body && hasBox(block) && blockStats(block).chars >= BLOCK_MODEL.minChars &&
-          blockScore(blockFeatures(block)) > NEAR_PROSE;
+          sentencesOf(block) > 0 && blockScore(blockFeatures(block)) > NEAR_PROSE;
       nearMemo.set(block, v);
     }
     return v;
