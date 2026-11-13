@@ -26,11 +26,32 @@
   });
   const rgbStr = (c) => `rgb(${c.r | 0},${c.g | 0},${c.b | 0})`;
 
-  // Computed-style colours only: "rgb(r, g, b)", "rgba(r, g, b, a)", "rgb(r g b / a)".
-  // Anything else (oklch(), color(), '') -> null.
+  // Computed-style colours. "rgb(r, g, b)", "rgba(r, g, b, a)" and
+  // "rgb(r g b / a)" are parsed directly. Modern CSS computes to other
+  // syntaxes too: color-mix() and oklch() surfaces (Discord, Tailwind 4,
+  // Open Props themes) come back as oklab()/oklch()/lab()/color(...). Those
+  // are converted by the browser itself: paint one pixel, read it back.
+  // Outside a browser (node), and for '' or invalid input, the result is null.
+  const RGB_RX = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/;
+  let pixel = null;
+  const converted = new Map();   // css string -> { r, g, b, a } | null
+  const viaBrowser = (s) => {
+    if (!s || typeof OffscreenCanvas !== 'function' || typeof CSS === 'undefined' || !CSS.supports('color', s)) return null;
+    let c = converted.get(s);
+    if (c !== undefined) return c;
+    if (!pixel) pixel = new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+    pixel.clearRect(0, 0, 1, 1);
+    pixel.fillStyle = s;
+    pixel.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data;
+    c = { r, g, b, a: a / 255 };
+    if (converted.size >= 512) converted.clear();
+    converted.set(s, c);
+    return c;
+  };
   const parseCssColor = (s) => {
-    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/.exec(s || '');
-    if (!m) return null;
+    const m = RGB_RX.exec(s || '');
+    if (!m) return viaBrowser(s);
     const a = m[4] === undefined ? 1 : (m[5] ? +m[4] / 100 : +m[4]);
     return { r: +m[1], g: +m[2], b: +m[3], a };
   };

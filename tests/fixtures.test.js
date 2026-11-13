@@ -13,12 +13,26 @@ let h = null;
 before(async () => { h = await startHarness(); });
 after(async () => { if (h) await h.stop(); });
 const needChrome = (t) => { if (!h) { t.skip('Chrome not found (set CHROME_PATH)'); return false; } return true; };
+// WCAG AA for body text: every colour painted into a "coloured" element must
+// stay readable on that element's surface.
+const READABLE = 4.5;
 const expectationsHold = (snap) => {
   for (const e of snap.expectations) {
     if (e.expect === 'plain') assert.equal(e.share, 0, `${e.el} should stay plain`);
-    else assert.ok(e.share > 0.5, `${e.el} should be coloured (share ${e.share})`);
+    else {
+      assert.ok(e.share > 0.5, `${e.el} should be coloured (share ${e.share})`);
+      assert.ok(e.contrast >= READABLE, `${e.el} should be readable: lowest contrast ${e.contrast} < ${READABLE}`);
+    }
   }
 };
+
+test('dark-color-mix: every scheme stays readable on a color-mix()/oklab() dark surface', async (t) => {
+  if (!needChrome(t)) return;
+  for (const scheme of Object.keys(require('../src/core.js').SCHEMES)) {
+    const snap = await (await h.open('dark-color-mix.html', { enabled: true, scheme })).snapshot();
+    for (const e of snap.expectations) assert.ok(e.contrast >= READABLE, `${scheme}: ${e.el} lowest contrast ${e.contrast}`);
+  }
+});
 
 test('late.html: the prose arrived after the content scripts were running (late path really exercised)', async (t) => {
   if (!needChrome(t)) return;

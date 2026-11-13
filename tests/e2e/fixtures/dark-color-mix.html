@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Dark chat (modern colour syntax)</title><style>
+/* Discord-style theme: surfaces and text are color-mix()/oklch(), so their
+   computed values are oklab()/oklch() strings, not rgb(). */
+:root { --bg: #313338; --text: #dbdee1; }
+body { margin: 0; font: 16px/1.4 "gg sans", "Helvetica Neue", sans-serif; background: color-mix(in oklab, var(--bg) 100%, black 0%); color: color-mix(in oklab, var(--text) 100%, black 0%); }
+.chat { max-width: 900px; padding: 16px 24px; }
+.msg { padding: 8px 0; }
+.author { font-weight: 600; color: oklch(0.92 0.02 85); }
+</style></head><body>
+<main class="chat">
+<div class="msg"><span class="author">Luca</span>
+<p id="m1" data-expect="coloured">Your design is a good one: snapshot plus log files on disk, with the upload and download left to user scripts, gives predictable recovery without the database needing any cloud-provider code. I would adjust one thing. Archiving the write-ahead log itself is the wrong layer, because it is short-lived and recycled once pages are flushed.</p>
+<p id="m2" data-expect="coloured">The replication log is a better source, because it is already ordered, replayable and indexed, and it is what a joining peer replays after getting a snapshot. The shape I would propose has three parts. Periodic full backups record the index they were taken at, and later segments go into an archive directory.</p>
+<p id="m3" data-expect="coloured">A restore command takes a backup plus archived segments, replays up to a target index or timestamp, and starts the server. That also gives point-in-time recovery. The non-voting listener role we discussed is a separate and smaller piece of work, and it helps with a warm standby rather than the cold case.</p>
+<p id="m4" data-expect="coloured">If you would like to open an issue for the archive and restore part, I would happily scope it with you. Describing your recovery time target and what should trigger the restore would help most. We can then decide which pieces belong in the server and which stay in your own scripts.</p>
+</div>
+</main>
+</body></html>

@@ -14,11 +14,13 @@ test('tokenizeWords folds punctuation-only tokens into neighbours', () => {
   assert.deepEqual(tokenizeWords(''), []);
 });
 
-test('parseCssColor parses computed rgb/rgba and rejects other syntaxes', () => {
+test('parseCssColor parses computed rgb/rgba; other syntaxes need a browser (null in node)', () => {
   assert.deepEqual(parseCssColor('rgb(13, 17, 23)'), { r: 13, g: 17, b: 23, a: 1 });
   assert.equal(parseCssColor('rgba(0, 0, 0, 0)').a, 0);
   assert.equal(parseCssColor('rgb(13 17 23 / 50%)').a, 0.5);
+  // In the browser these are converted (tests/e2e/fixtures/dark-color-mix.html).
   assert.equal(parseCssColor('oklch(0.5 0.1 20)'), null);
+  assert.equal(parseCssColor(''), null);
 });
 
 test('isDarkSurface prefers background, falls back to text luminance', () => {
