@@ -80,7 +80,22 @@ class Cdp {
     return new Promise((resolve, reject) => this.calls.set(id, { method, resolve, reject }));
   }
   once(method, sessionId) { return new Promise((resolve) => this.waiters.push({ method, sessionId, resolve })); }
+  // Forget unanswered once() waiters (a page whose load event never came).
+  drop(method, sessionId) { this.waiters = this.waiters.filter((w) => w.method !== method || w.sessionId !== sessionId); }
 }
+
+// Script sources are read here and passed into the page, so page CSP never
+// blocks them and fixture pages need not serve the extension's files.
+function extensionSources() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  return {
+    scripts: manifest.content_scripts[0].js.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')),
+    collector: fs.readFileSync(path.join(__dirname, 'collector.js'), 'utf8')
+  };
+}
+
+// A real desktop Chrome UA: some sites serve bot walls to "HeadlessChrome".
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36';
 
 async function startHarness() {
   const bin = findChrome();
@@ -89,36 +104,68 @@ async function startHarness() {
   const origin = `http://127.0.0.1:${server.address().port}`;
   const chrome = await launchChrome(bin);
   const cdp = await Cdp.connect(chrome.wsUrl);
-  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
-  const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
-  const send = (method, params) => cdp.send(method, params, sessionId);
-  await send('Page.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 900, deviceScaleFactor: 1, mobile: false });
   const pageScript = fs.readFileSync(path.join(__dirname, 'page.js'), 'utf8');
-
-  // Evaluate an expression in the page; promises are awaited, values returned by value.
-  async function evaluate(expression) {
-    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-    if (r.exceptionDetails) throw new Error('page: ' + (r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text));
-    return r.result.value;
-  }
   const settle = (ms = SETTLE_MS) => new Promise((r) => setTimeout(r, ms));
 
-  async function open(fixture, sync = { enabled: true }) {
-    const loaded = cdp.once('Page.loadEventFired', sessionId);
-    await send('Page.navigate', { url: `${origin}/tests/e2e/fixtures/${fixture}` });
-    await loaded;
-    await evaluate(`(${pageScript})(${JSON.stringify(sync)})`);
-    await settle();
+  // One browser tab. open(fixture) runs the extension in the fixture page's
+  // main world; visit(url) loads a real site and runs it in an isolated world,
+  // as Chrome runs content scripts, so the page's own `chrome` and CSP are
+  // untouched.
+  async function newTab() {
+    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+    const send = (method, params) => cdp.send(method, params, sessionId);
+    await send('Page.enable');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send('Emulation.setUserAgentOverride', { userAgent: USER_AGENT });
+    let contextId;   // undefined = main world
+
+    // Evaluate an expression in the page; promises are awaited, values returned by value.
+    async function evaluate(expression) {
+      const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, contextId });
+      if (r.exceptionDetails) throw new Error('page: ' + (r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text));
+      return r.result.value;
+    }
     const call = (method, ...args) => evaluate(`window.__bzlnHarness.${method}(...${JSON.stringify(args)})`);
-    return {
+    const page = {
       evaluate, settle,
       snapshot: () => call('snapshot'),
       send: (msg) => call('send', msg),
       setSync: (obj) => call('setSync', obj),
       local: () => call('local'),
+      collect: () => call('collect'),
+    };
+    async function load(url, timeoutMs) {
+      cdp.drop('Page.loadEventFired', sessionId);
+      const loaded = cdp.once('Page.loadEventFired', sessionId);
+      const nav = await send('Page.navigate', { url });
+      if (nav.errorText) throw new Error(`navigate ${url}: ${nav.errorText}`);
+      await Promise.race([loaded, settle(timeoutMs)]);   // slow pages: go on after timeoutMs
+    }
+    async function inject(sync) {
+      await evaluate(`(${pageScript})(${JSON.stringify(sync)}, ${JSON.stringify(extensionSources())})`);
+      await settle();
+      return page;
+    }
+    return {
+      async open(fixture, sync = { enabled: true }) {
+        contextId = undefined;
+        await load(`${origin}/tests/e2e/fixtures/${fixture}`, 15000);
+        return inject(sync);
+      },
+      async visit(url, sync = { enabled: true }, { loadTimeoutMs = 20000 } = {}) {
+        contextId = undefined;
+        await load(url, loadTimeoutMs);
+        await settle(1500);   // late client-side rendering
+        const { frameTree } = await send('Page.getFrameTree');
+        ({ executionContextId: contextId } = await send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: 'buzzline-harness', grantUniveralAccess: false }));
+        return inject(sync);
+      },
+      close: () => cdp.send('Target.closeTarget', { targetId }).catch(() => {})
     };
   }
+
+  const first = await newTab();
 
   async function stop() {
     const exited = new Promise((r) => chrome.proc.once('exit', r));
@@ -129,7 +176,7 @@ async function startHarness() {
     await new Promise((r) => server.close(r));
   }
 
-  return { open, stop };
+  return { open: first.open, visit: first.visit, newTab, stop };
 }
 
 module.exports = { startHarness, SETTLE_MS };

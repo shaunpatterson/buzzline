@@ -3,9 +3,9 @@
 //   node tests/e2e/train.js --quick    # logistic only
 //
 // data/blocks.json        per-block features (no page text, no DOM paths); columnar:
-//                         { columns: [...], rows: { site: { index: [values] } } }
-// data/labels.json        "site:i" -> body | related | chrome | ad   (LLM-judged; contested
-//                         ~15% re-judged by a stronger model with neighbouring blocks)
+//                         { columns: [...], rows: { page: { index: [values] } } }
+// data/labels.json        "page:i" -> 0..1, System1 (TypeSafe Jev) on "should this block
+//                         be highlighted?" (tests/e2e/crawl.js, label.js, build_dataset.js)
 // data/holdout_sites.json sites never used for fitting; reported separately
 // data/model.json         what core.js embeds (written by this script)
 'use strict';
@@ -22,9 +22,15 @@ const get = (site, i) => { const cols = blocksFile.columns; const v = blocksFile
 // Feature vector comes from src/core.js.
 const { featureVector, FEATURE_NAMES: NAMES } = require('../../src/core.js');
 const feat = featureVector;
-const rows = Object.entries(labels).map(([k, role]) => {
-  const [site, i] = k.split(':'); const b = get(site, i);
-  return { site, b, x: feat(b), y: role === 'body' && !/^h[1-6]$/.test(b.tag) ? 1 : 0, w: Math.min(b.chars, 1000), col: b.coloured > 0.5 };
+// Labels are System1's "should this block be highlighted" probability (0..1)
+// and are fitted as soft targets; evaluation counts a block as reading text at
+// >= 0.5. Headings are never coloured, so they are 0 whatever the label says.
+// Pages of one site ("<site>~home", "<site>~article") share a fold and the
+// holdout. `col` is the root-pick gate: the block sits in the content root.
+const siteOf = (page) => page.split('~')[0];
+const rows = Object.entries(labels).map(([k, y]) => {
+  const cut = k.lastIndexOf(':'); const page = k.slice(0, cut), b = get(page, k.slice(cut + 1));
+  return { site: siteOf(page), b, x: feat(b), y: /^h[1-6]$/.test(b.tag) ? 0 : y, w: Math.min(b.chars, 1000), col: (b.inRoot ?? b.coloured) > 0.5 };
 });
 const sig = (z) => 1 / (1 + Math.exp(-z));
 
@@ -72,7 +78,7 @@ function fitMlp(train, H = 16, epochs = 80, lr = 0.01, l2 = 1e-4, seed = 7) {
 
 // ---------- evaluation ----------
 const THRESHOLD = 0.4, FLOOR = 50;
-const score = (rs, sel) => { let TP = 0, FP = 0, FN = 0; for (const r of rs) { const p = sel(r); if (p && r.y) TP += r.w; else if (p && !r.y) FP += r.w; else if (!p && r.y) FN += r.w; } return { p: TP / Math.max(1, TP + FP), r: TP / Math.max(1, TP + FN) }; };
+const score = (rs, sel) => { let TP = 0, FP = 0, FN = 0; for (const r of rs) { const p = sel(r), t = r.y >= 0.5; if (p && t) TP += r.w; else if (p && !t) FP += r.w; else if (!p && t) FN += r.w; } return { p: TP / Math.max(1, TP + FP), r: TP / Math.max(1, TP + FN) }; };
 const fmt = (m) => `precision ${m.p.toFixed(3)} recall ${m.r.toFixed(3)}`;
 const train = rows.filter((r) => !holdout.has(r.site)), test = rows.filter((r) => holdout.has(r.site));
 const sites = [...new Set(train.map((r) => r.site))].sort();
@@ -84,6 +90,13 @@ function crossVal(fitter) {
 }
 console.log(`train: ${sites.length} sites / ${train.length} blocks; holdout: ${holdout.size} sites / ${test.length} blocks (char-weighted, thr ${THRESHOLD}, floor ${FLOOR})`);
 console.log('baseline (root pick only)   cv:', fmt(score(train, (r) => r.col)), ' holdout:', fmt(score(test, (r) => r.col)));
+// What ships today, judged by the same labels: the embedded model behind the
+// same gates, and the live extension's actual colouring (reading runs,
+// self-colour and all) as recorded at crawl time.
+const { blockScore, BLOCK_MODEL } = require('../../src/core.js');
+const shipped = (r) => r.col && r.b.chars >= BLOCK_MODEL.minChars && blockScore(r.b) > BLOCK_MODEL.threshold;
+console.log('shipped model               cv:', fmt(score(train, shipped)), ' holdout:', fmt(score(test, shipped)));
+console.log('shipped extension (live)    cv:', fmt(score(train, (r) => r.b.coloured > 0.5)), ' holdout:', fmt(score(test, (r) => r.b.coloured > 0.5)));
 const models = { logistic: fitLogistic };
 const H = +(process.env.H || 16);
 if (!quick) models.mlp = (tr) => fitMlp(tr, H);
@@ -93,7 +106,7 @@ for (const [name, fitter] of Object.entries(models)) {
   const mcv = score(train, (r) => r.col && r.b.chars >= FLOOR && cv.get(r) > THRESHOLD);
   const mho = score(test, (r) => r.col && r.b.chars >= FLOOR && full.predict(r.x) > THRESHOLD);
   // per-site precision on holdout (sites with body text)
-  const per = {}; for (const r of test) { const c = per[r.site] ??= { TP: 0, FP: 0, FN: 0, guts: 0 }; const p = r.col && r.b.chars >= FLOOR && full.predict(r.x) > THRESHOLD; if (r.y) c.guts += r.w; if (p && r.y) c.TP += r.w; else if (p && !r.y) c.FP += r.w; else if (!p && r.y) c.FN += r.w; }
+  const per = {}; for (const r of test) { const c = per[r.site] ??= { TP: 0, FP: 0, FN: 0, guts: 0 }; const p = r.col && r.b.chars >= FLOOR && full.predict(r.x) > THRESHOLD, t = r.y >= 0.5; if (t) c.guts += r.w; if (p && t) c.TP += r.w; else if (p && !t) c.FP += r.w; else if (!p && t) c.FN += r.w; }
   const under = Object.entries(per).filter(([, c]) => c.guts > 0 && c.TP + c.FP > 0 && c.TP / (c.TP + c.FP) < 0.9).map(([s, c]) => `${s} ${(c.TP / Math.max(1, c.TP + c.FP)).toFixed(2)}`);
   const fpNoGuts = Object.entries(per).filter(([, c]) => c.guts === 0 && c.FP > 0).map(([s, c]) => `${s} ${c.FP}c`);
   console.log(`${name.padEnd(9)} 5-fold cv: ${fmt(mcv)} | holdout: ${fmt(mho)} | holdout sites <0.90: ${under.length} [${under.join(', ')}] | coloured on no-prose pages: [${fpNoGuts.join(', ')}]`);
@@ -105,7 +118,7 @@ for (const [name, fitter] of Object.entries(models)) {
 const fbeta = (m, b = 0.5) => (1 + b * b) * m.p * m.r / Math.max(1e-9, b * b * m.p + m.r);
 let best = null;
 for (const [name, res] of Object.entries(results)) {
-  for (const thr of [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6]) {
+  for (const thr of [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7]) {
     const mcv = score(train, (r) => r.col && r.b.chars >= FLOOR && res.cv.get(r) > thr);
     const mho = score(test, (r) => r.col && r.b.chars >= FLOOR && res.model.predict(r.x) > thr);
     console.log(`  ${name.padEnd(9)} thr ${thr.toFixed(2)}  cv ${fmt(mcv)} F0.5 ${fbeta(mcv).toFixed(3)} | holdout ${fmt(mho)} F0.5 ${fbeta(mho).toFixed(3)}`);

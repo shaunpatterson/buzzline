@@ -1,9 +1,11 @@
-// Page side of the fixture harness (tests/e2e/harness.js evaluates this file
-// as a function expression in the fixture page). Installs a fake `chrome`
-// adapter: in-memory storage with async callbacks and onChanged events, and a
-// captured runtime.onMessage listener. Then loads the manifest's content
-// scripts and exposes window.__bzlnHarness.
-async (initialSync) => {
+// Page side of the harness (tests/e2e/harness.js evaluates this file as a
+// function expression, in the fixture page's main world or, for real sites, in
+// an isolated world like an extension's). Installs a fake `chrome` adapter:
+// in-memory storage with async callbacks and onChanged events, and a captured
+// runtime.onMessage listener. Then runs the manifest's content scripts (their
+// sources are passed in from Node, so page CSP never applies) and exposes
+// window.__bzlnHarness.
+async (initialSync, sources) => {
   const later = (fn) => setTimeout(fn, 0);   // chrome.* callbacks are async
   const store = { sync: { ...initialSync }, local: {} };
   const onChanged = [], onMessage = [];
@@ -24,10 +26,8 @@ async (initialSync) => {
     runtime: { onMessage: { addListener: (fn) => onMessage.push(fn) } }
   };
 
-  const nc = { cache: 'no-store' };
-  const manifest = await (await fetch('/manifest.json', nc)).json();
-  for (const f of manifest.content_scripts[0].js) (0, eval)(await (await fetch('/' + f, nc)).text());
-  const collectorSrc = await (await fetch('/tests/e2e/collector.js', nc)).text();
+  for (const src of sources.scripts) (0, eval)(src);
+  const collectorSrc = sources.collector;
 
   const OWN = '.bzln-sprint-root, [data-bzln-launcher]';
   const ranges = (inside) => {
@@ -100,6 +100,10 @@ async (initialSync) => {
       expectations: [...document.querySelectorAll('[data-expect]')].map((el) => ({
         el: describe(el), expect: el.dataset.expect, share: +colouredShare(el).toFixed(3), contrast: minContrast(el)
       }))
-    })
+    }),
+    // Every counting block with its live features, text (first 400 chars),
+    // the share the extension coloured, and whether it sits in the content
+    // root (tests/e2e/collector.js).
+    collect: () => (0, eval)(collectorSrc)
   };
 }

@@ -104,7 +104,8 @@ On top of that, a block is only coloured if it sits in a *run* of reading
 text — consecutive prose blocks (section headings, usernames, vote/score and
 timestamp rows don't break a run; ~60 characters of link titles and URLs, as
 between search results, do). Blocks scoring just under the model threshold
-(a short reader comment) join a run that already contains accepted prose adding up to roughly five sentences
+(a short reader comment) join a run if they hold at least one sentence and the
+run already contains accepted prose adding up to roughly five sentences
 and 500 characters. Search results, feed snippets and isolated one-paragraph
 cards stay plain; articles, docs, READMEs and comment threads don't notice.
 Low-scoring blocks (bylines, captions, citations, listing cards, feed titles,
@@ -113,29 +114,39 @@ characters are never coloured. Ad markup (`promoted`, `ad-type`, `data-ad-*`
 attributes, `<*-ad-*>` elements, `rel=sponsored` links) and link-like custom
 elements are recognised directly.
 
-The model was fit on 15.3k LLM-labelled blocks from 250 real sites (news in
-twelve countries, docs, wikis, forums, recipes, shops, listings, feeds), with
-the ~15% contested labels re-judged by a stronger model given the
-neighbouring blocks. 50 sites were never used for fitting. Char-weighted
-precision / recall of what gets coloured (threshold 0.45):
+The model is fit on 46.6k blocks from 643 pages of 499 sites: the 250 pages of
+the earlier dataset (news in twelve countries, docs, wikis, forums, recipes,
+shops, listings, feeds) plus the homepage and one article of 250 popular sites
+from the [Tranco](https://tranco-list.eu) top list (`tests/e2e/sites_v4.json`).
+Every block is labelled by System1 (TypeSafe's Jev decision model,
+`jev-1.14.0`) answering "should this block be highlighted?" as a probability,
+and the model fits that probability directly. The prompt was checked against
+the fixture pages' verdicts first (54/57 blocks; the three others are two
+isolated comments the reading-run rule keeps plain and one snippet at 0.50).
+On the re-crawled earlier pages System1 agrees with the previous LLM labels on
+93% of characters, and is slightly stricter. 100 sites are never used for
+fitting. Char-weighted precision / recall against System1 (a block counts as
+reading text at ≥ 0.5):
 
-| | root pick only | logistic (26 w) | **MLP (shipped)** |
+| | root pick only | previous model | **MLP (shipped, thr 0.60)** |
 |---|---|---|---|
-| 5-fold CV by site, 200 sites | 0.814 / 0.973 | 0.925 / 0.919 | **0.951 / 0.887** |
-| 50 held-out sites | 0.841 / 0.935 | 0.975 / 0.893 | **0.982 / 0.881** |
+| 5-fold CV by site, 399 sites | 0.729 / 0.940 | 0.918 / 0.855 | **0.955 / 0.841** |
+| 100 held-out sites | 0.683 / 0.927 | 0.872 / 0.854 | **0.931 / 0.841** |
+| previous 50 held-out sites, previous LLM labels | | 0.982 / 0.881 | 0.986 / 0.830 |
 
-The MLP was chosen by precision-weighted F0.5 on cross-validation: wrong
-colouring is what readers notice. One known train/serve difference: the
-training data counted link text as "inside `<a>`" while the live page also
-counts `role=link`, `[href]`/`[url]` and `<*-link>` custom elements (Reddit
-feed titles). That only makes such pages *less* likely to be coloured; the
-next collection round will unify it. Remaining misses on the held-out sites are
-short promo paragraphs (podcast plugs, comment disclaimers) that read like
-prose. Refit with `node tests/e2e/train.js && node scripts/embed_model.js`;
-`tests/e2e/collector.js` is the page-side block collector; the committed
-data holds per-block features and labels only, never page text. Blocks you mark "should / shouldn't be colored" from the popup are
-stored locally (features only) and can be exported from Settings to grow the
-dataset.
+The MLP and its threshold are chosen by precision-weighted F0.5 on
+cross-validation: wrong colouring is what readers notice. Features are
+recorded by the live extension itself (`tests/e2e/collector.js` calls the same
+`BuzzlineBlocks` code), so training and serving measure blocks identically.
+Rebuild end to end with
+`node tests/e2e/crawl.js` (headless Chrome, extension loaded in an isolated
+world), `TYPESAFE_API_KEY=… node tests/e2e/label.js`,
+`node tests/e2e/build_dataset.js`, `node tests/e2e/train.js` and
+`node scripts/embed_model.js`. Crawled text stays in the gitignored
+`tests/e2e/data/raw/`; the committed data holds per-block features and labels
+only, never page text. Blocks you mark "should / shouldn't be colored" from
+the popup are stored locally (features only) and can be exported from
+Settings to grow the dataset.
 
 ## Performance
 
@@ -178,7 +189,7 @@ src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
 src/options.html/css/js Settings page (Sprint, coloring, blocked sites, feedback export)
 tests/*.test.js        Unit tests (node) and fixture-page tests (headless Chrome)
-tests/e2e/             Fixture harness + pages, block collector, labelled dataset and model trainer
+tests/e2e/             Fixture harness + pages; crawl.js / label.js (System1) / build_dataset.js / train.js training pipeline; dataset
 scripts/build_firefox.js  Writes dist/firefox/ with a Firefox manifest (event page, gecko id)
 icons/                 Extension icons (cropped from assets/logo.png)
 scripts/gen_icons.py   Regenerates the icons (Pillow)
