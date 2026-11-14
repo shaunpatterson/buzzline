@@ -57,13 +57,22 @@ function launchChrome(bin) {
 
 // Minimal DevTools protocol client over one browser-level WebSocket
 // (flattened sessions: page commands carry a sessionId).
+// Every call times out (CALL_TIMEOUT_MS) and a dropped connection fails all
+// pending calls, so a dead or wedged browser surfaces as an error, never a hang.
+const CALL_TIMEOUT_MS = 30000;
 class Cdp {
   constructor(ws) {
-    this.ws = ws; this.seq = 0; this.calls = new Map(); this.waiters = [];
+    this.ws = ws; this.seq = 0; this.calls = new Map(); this.waiters = []; this.closed = false;
+    ws.onclose = () => {
+      this.closed = true;
+      for (const c of this.calls.values()) c.reject(new Error(`${c.method}: browser connection closed`));
+      this.calls.clear();
+    };
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.id) {
-        const c = this.calls.get(m.id); this.calls.delete(m.id);
+        const c = this.calls.get(m.id); if (!c) return; this.calls.delete(m.id);
+        clearTimeout(c.timer);
         if (m.error) c.reject(new Error(`${c.method}: ${m.error.message}`)); else c.resolve(m.result);
         return;
       }
@@ -75,9 +84,13 @@ class Cdp {
     return new Promise((resolve, reject) => { ws.onopen = () => resolve(new Cdp(ws)); ws.onerror = () => reject(new Error('DevTools connection failed')); });
   }
   send(method, params = {}, sessionId) {
+    if (this.closed) return Promise.reject(new Error(`${method}: browser connection closed`));
     const id = ++this.seq;
     this.ws.send(JSON.stringify({ id, method, params, sessionId }));
-    return new Promise((resolve, reject) => this.calls.set(id, { method, resolve, reject }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.calls.delete(id); reject(new Error(`${method}: no reply in ${CALL_TIMEOUT_MS} ms`)); }, CALL_TIMEOUT_MS);
+      this.calls.set(id, { method, resolve, reject, timer });
+    });
   }
   once(method, sessionId) { return new Promise((resolve) => this.waiters.push({ method, sessionId, resolve })); }
   // Forget unanswered once() waiters (a page whose load event never came).
@@ -142,8 +155,8 @@ async function startHarness() {
       if (nav.errorText) throw new Error(`navigate ${url}: ${nav.errorText}`);
       await Promise.race([loaded, settle(timeoutMs)]);   // slow pages: go on after timeoutMs
     }
-    async function inject(sync) {
-      await evaluate(`(${pageScript})(${JSON.stringify(sync)}, ${JSON.stringify(extensionSources())})`);
+    async function inject(sync, sources = extensionSources()) {
+      await evaluate(`(${pageScript})(${JSON.stringify(sync)}, ${JSON.stringify(sources)})`);
       await settle();
       return page;
     }
@@ -153,13 +166,15 @@ async function startHarness() {
         await load(`${origin}/tests/e2e/fixtures/${fixture}`, 15000);
         return inject(sync);
       },
-      async visit(url, sync = { enabled: true }, { loadTimeoutMs = 20000 } = {}) {
+      // sources: extension script sources to run instead of the repo's (live
+      // pipeline experiments, e.g. a different model threshold); see extensionSources().
+      async visit(url, sync = { enabled: true }, { loadTimeoutMs = 20000, sources } = {}) {
         contextId = undefined;
         await load(url, loadTimeoutMs);
         await settle(1500);   // late client-side rendering
         const { frameTree } = await send('Page.getFrameTree');
         ({ executionContextId: contextId } = await send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: 'buzzline-harness', grantUniveralAccess: false }));
-        return inject(sync);
+        return inject(sync, sources);
       },
       close: () => cdp.send('Target.closeTarget', { targetId }).catch(() => {})
     };
@@ -170,13 +185,19 @@ async function startHarness() {
   async function stop() {
     const exited = new Promise((r) => chrome.proc.once('exit', r));
     try { await cdp.send('Browser.close'); } catch { /* already gone */ }
-    chrome.proc.kill();
-    await exited;
-    fs.rmSync(chrome.profile, { recursive: true, force: true });
+    // A Chrome that already died never emits 'exit' again: only wait if it is alive.
+    if (chrome.proc.exitCode === null && chrome.proc.signalCode === null) {
+      chrome.proc.kill();
+      await Promise.race([exited, settle(5000)]);
+      if (chrome.proc.exitCode === null && chrome.proc.signalCode === null) chrome.proc.kill('SIGKILL');
+    }
+    // Chrome's helper processes can still be writing to the profile for a moment.
+    fs.rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    server.closeAllConnections();   // a helper process can hold a keep-alive socket open
     await new Promise((r) => server.close(r));
   }
 
   return { open: first.open, visit: first.visit, newTab, stop };
 }
 
-module.exports = { startHarness, SETTLE_MS };
+module.exports = { startHarness, extensionSources, SETTLE_MS };

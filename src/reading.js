@@ -203,7 +203,7 @@
   // title ("Delivering inference to AI-native companies") is a label, not a
   // comment. The run itself must contain at least one block the model
   // accepts outright.
-  const NEAR_PROSE = 0.12;
+  const NEAR_PROSE = 0.2;   // tuned on the live pipeline with the model (tests/e2e/data/live_tuning.json)
   let nearMemo = new WeakMap();
   function isReadingCandidate(block) {
     if (isProseBlockEl(block)) return true;

@@ -114,9 +114,10 @@ characters are never coloured. Ad markup (`promoted`, `ad-type`, `data-ad-*`
 attributes, `<*-ad-*>` elements, `rel=sponsored` links) and link-like custom
 elements are recognised directly.
 
-The model is fit on 46.6k blocks from 643 pages of 499 sites: the 250 pages of
-the earlier dataset (news in twelve countries, docs, wikis, forums, recipes,
-shops, listings, feeds) plus the homepage and one article of 250 popular sites
+The dataset holds 46.6k blocks from 643 pages of 499 sites: 246 of the 250
+pages of the earlier dataset, re-crawled (news in twelve countries, docs,
+wikis, forums, recipes, shops, listings, feeds), plus the homepage and, where
+one could be found automatically (144 sites), one article of 253 popular sites
 from the [Tranco](https://tranco-list.eu) top list (`tests/e2e/sites_v4.json`).
 Every block is labelled by System1 (TypeSafe's Jev decision model,
 `jev-1.14.0`) answering "should this block be highlighted?" as a probability,
@@ -124,29 +125,45 @@ and the model fits that probability directly. The prompt was checked against
 the fixture pages' verdicts first (54/57 blocks; the three others are two
 isolated comments the reading-run rule keeps plain and one snippet at 0.50).
 On the re-crawled earlier pages System1 agrees with the previous LLM labels on
-93% of characters, and is slightly stricter. 100 sites are never used for
-fitting. Char-weighted precision / recall against System1 (a block counts as
-reading text at ≥ 0.5):
+93% of characters, and is slightly stricter. The model is fit on 36.7k blocks
+from 399 sites; 100 sites are held out. The classifier alone, char-weighted
+precision / recall against System1 (a block counts as reading text at ≥ 0.5):
 
-| | root pick only | previous model | **MLP (shipped, thr 0.60)** |
+| | root pick only | previous model | **MLP (shipped)** |
 |---|---|---|---|
-| 5-fold CV by site, 399 sites | 0.729 / 0.940 | 0.918 / 0.855 | **0.955 / 0.841** |
-| 100 held-out sites | 0.683 / 0.927 | 0.872 / 0.854 | **0.931 / 0.841** |
-| previous 50 held-out sites, previous LLM labels | | 0.982 / 0.881 | 0.986 / 0.830 |
+| 5-fold CV by site, 399 sites | 0.729 / 0.940 | 0.918 / 0.855 | **0.955 / 0.841** (thr 0.60) |
+| 100 held-out sites | 0.683 / 0.927 | 0.872 / 0.854 | **0.931 / 0.841** (thr 0.60) |
+| previous 50 held-out sites, previous LLM labels | | 0.982 / 0.881 | 0.986 / 0.830 (thr 0.60) |
 
-The MLP and its threshold are chosen by precision-weighted F0.5 on
-cross-validation: wrong colouring is what readers notice. Features are
-recorded by the live extension itself (`tests/e2e/collector.js` calls the same
-`BuzzlineBlocks` code), so training and serving measure blocks identically.
-Rebuild end to end with
+What a reader sees also depends on the content root and the reading-run rule,
+so the shipped threshold (0.45) and `NEAR_PROSE` (0.2) were tuned on the live
+pipeline instead: `tests/e2e/live_eval.js` revisits pages with the extension
+loaded and scores its colouring decisions against System1, and the pair with
+the best live F0.5 on 79 training pages was kept
+(`tests/e2e/data/live_tuning.json`; `train.js` applies it while the fitted
+weights are unchanged and warns once they change). Live, on all 128 held-out
+pages:
+
+| live colouring decision vs System1 | precision | recall | F0.5 |
+|---|---|---|---|
+| previous model (thr 0.45, near 0.12) | 0.868 | 0.848 | 0.864 |
+| **shipped (thr 0.45, near 0.2)** | **0.844** | **0.877** | **0.851** |
+
+So the retrained model colours more of the reading text than the previous
+one, at slightly lower precision. The MLP itself is chosen by
+precision-weighted F0.5 on cross-validation: wrong colouring is what readers
+notice. Features are recorded by the live extension itself
+(`tests/e2e/collector.js` calls the same `BuzzlineBlocks` code), so training
+and serving measure blocks identically. Rebuild end to end with
 `node tests/e2e/crawl.js` (headless Chrome, extension loaded in an isolated
 world), `TYPESAFE_API_KEY=… node tests/e2e/label.js`,
-`node tests/e2e/build_dataset.js`, `node tests/e2e/train.js` and
-`node scripts/embed_model.js`. Crawled text stays in the gitignored
-`tests/e2e/data/raw/`; the committed data holds per-block features and labels
-only, never page text. Blocks you mark "should / shouldn't be colored" from
-the popup are stored locally (features only) and can be exported from
-Settings to grow the dataset.
+`node tests/e2e/build_dataset.js`, `node tests/e2e/train.js`,
+`node tests/e2e/live_eval.js` (record the pick in `live_tuning.json`, rerun
+`train.js`) and `node scripts/embed_model.js`. Crawled text stays in the
+gitignored `tests/e2e/data/raw/`; the committed data holds per-block features
+and labels only, never page text. Blocks you mark "should / shouldn't be
+colored" from the popup are stored locally (features only) and can be
+exported from Settings to grow the dataset.
 
 ## Performance
 

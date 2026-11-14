@@ -130,5 +130,22 @@ const m = results[pick].model;
 console.log(`best by CV F0.5: ${pick} @ ${THR}`);
 const out = pick === 'mlp' ? { type: 'mlp', names: NAMES, threshold: THR, minChars: FLOOR, H: m.H, W1: m.W1.map((r) => r.map((v) => +v.toFixed(4))), b1: m.b1.map((v) => +v.toFixed(4)), W2: m.W2.map((v) => +v.toFixed(4)), b2: +m.b2.toFixed(4) }
   : { type: 'logistic', names: NAMES, threshold: THR, minChars: FLOOR, w: m.w.map((v) => +v.toFixed(4)) };
+// The threshold that ships is the one tuned on the live pipeline
+// (tests/e2e/live_eval.js), recorded in data/live_tuning.json for the exact fit
+// it was measured on: the reading-run rule changes what a threshold means, so
+// the classifier-only pick above is only a starting point. A refit that changes
+// the weights invalidates the tuning; then the classifier pick is written and
+// live_eval must be rerun.
+const modelId = require('crypto').createHash('sha256').update(JSON.stringify({ ...out, threshold: undefined })).digest('hex').slice(0, 12);
+const tuningPath = path.join(__dirname, 'data', 'live_tuning.json');
+const tuning = fs.existsSync(tuningPath) ? JSON.parse(fs.readFileSync(tuningPath, 'utf8')) : null;
+console.log(`model fingerprint ${modelId}`);
+if (tuning && tuning.model === modelId) {
+  out.threshold = tuning.threshold;
+  console.log(`threshold ${tuning.threshold} from data/live_tuning.json (${tuning.chosenBy}); classifier-only pick was ${THR}`);
+} else {
+  console.log(`WARNING: ${tuning ? `data/live_tuning.json is for model ${tuning.model}, not this fit` : 'no data/live_tuning.json'}; writing the classifier-only threshold ${THR}.`);
+  console.log('  Tune it live (node tests/e2e/live_eval.js), then record { model, threshold, nearProse, chosenBy } in data/live_tuning.json and rerun.');
+}
 if (!process.env.NO_WRITE) fs.writeFileSync(path.join(__dirname, 'data', 'model.json'), JSON.stringify(out));
-console.log(`chosen: ${pick} -> data/model.json`);
+console.log(`chosen: ${pick} @ ${out.threshold} -> data/model.json`);
