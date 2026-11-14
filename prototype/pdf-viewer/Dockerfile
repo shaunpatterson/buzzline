@@ -1,7 +1,7 @@
 # PROTOTYPE — Buzzline on PDFs (throwaway; see NOTES.md).
 # Build from the repo root (the viewer runs the extension's own src/):
 #   docker build -f prototype/pdf-viewer/Dockerfile -t buzzline-pdf-prototype .
-#   docker run --rm -p 8791:8791 buzzline-pdf-prototype
+#   docker run --rm -p 127.0.0.1:8791:8791 buzzline-pdf-prototype
 #   open http://127.0.0.1:8791/
 FROM node:22-alpine
 WORKDIR /app

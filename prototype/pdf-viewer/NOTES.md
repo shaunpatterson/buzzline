@@ -9,7 +9,10 @@ column and coloured by the existing extension code ("Reader")?
 With Docker, from the repo root:
 
     docker build -f prototype/pdf-viewer/Dockerfile -t buzzline-pdf-prototype .
-    docker run --rm -p 8791:8791 buzzline-pdf-prototype
+    docker run --rm -p 127.0.0.1:8791:8791 buzzline-pdf-prototype
+
+Keep the `127.0.0.1:`: the server will fetch any http(s) address it is given, so it
+must not be reachable from the network.
 
 or without: `node prototype/pdf-viewer/serve.js`. Then open http://127.0.0.1:8791/.
 
