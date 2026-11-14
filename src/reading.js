@@ -12,6 +12,7 @@
   const MIN_BLOCK_PROSE = 40;   // chars of non-link text for a block to count
   const MIN_PAGE_PROSE = 200;   // below this the page has no prose body
   const DOMINANCE = 0.75;       // child must hold this share to narrow the root
+  const LEFT_BEHIND = 400;      // ...and narrowing must not leave this much prose outside it
   const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
   const ROOT_RETRY_MS = 750;    // min gap between full-page root scans while no root is found
   const isHeading = (el) => HEADING_TAGS.has(el.tagName) || el.getAttribute('role') === 'heading';
@@ -446,6 +447,9 @@
         if (m > bestMass) { bestMass = m; best = c; }
       }
       if (!best || bestMass < DOMINANCE * mass.get(root)) break;
+      // The rest still holds real prose of its own (a live blog's pinned
+      // summary beside a long feed of posts): keep it in the root.
+      if (mass.get(root) - bestMass >= LEFT_BEHIND) break;
       // best is itself a paragraph-like block (owns most of its mass directly):
       // stop so a single long paragraph never becomes the whole root.
       if ((prose.get(best) || 0) >= 0.5 * bestMass) break;

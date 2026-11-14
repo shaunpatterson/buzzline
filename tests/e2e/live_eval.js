@@ -43,13 +43,16 @@ let pages = JSON.parse(fs.readFileSync(path.join(E2E, 'sites_v4.json'), 'utf8'))
 if (SAMPLE) pages = pages.sort((a, b) => hash(a.id) - hash(b.id)).slice(0, SAMPLE);
 const norm = (t) => (t || '').replace(/\s+/g, ' ').trim().slice(0, 160);
 
-// Extension sources with core.js swapped and/or the threshold and NEAR_PROSE
+// Extension sources with core.js swapped (a file), or every content script
+// taken from a git commit (ref), and/or the threshold and NEAR_PROSE
 // replaced; a pattern that is not found is an error, not a silent no-op.
-function variant({ core, thr, near }) {
+function variant({ core, ref, thr, near }) {
   const src = extensionSources();
   const files = JSON.parse(fs.readFileSync(path.join(E2E, '..', '..', 'manifest.json'), 'utf8')).content_scripts[0].js;
   const swap = (s, rx, to, what) => { if (!rx.test(s)) throw new Error(`${what} not found in the extension sources`); return s.replace(rx, to); };
+  const atRef = (f) => require('child_process').execFileSync('git', ['show', `${ref}:${f}`], { cwd: path.join(E2E, '..', '..'), encoding: 'utf8', maxBuffer: 1 << 26 });
   src.scripts = src.scripts.map((s, i) => {
+    if (ref) s = atRef(files[i]);
     if (files[i].endsWith('core.js')) {
       if (core) s = fs.readFileSync(core, 'utf8');
       if (thr !== null) s = swap(s, /("threshold":)[\d.]+/, `$1${thr}`, 'BLOCK_MODEL threshold');
@@ -114,7 +117,9 @@ async function measure(config, dumps) {
 async function main() {
   const dumps = new Map(pages.map((p) => [p.id, JSON.parse(fs.readFileSync(path.join(E2E, 'data', 'raw', 'crawl_v4', encodeURIComponent(p.id) + '.json'), 'utf8'))]));
   const configs = [];
-  if (BASELINE) configs.push({ name: `baseline ${path.basename(BASELINE)}`, core: BASELINE, thr: null, near: null });
+  // --baseline: a core.js file, or a git ref whose content scripts all run
+  // (e.g. HEAD, to compare uncommitted changes in src/ with the last commit).
+  if (BASELINE) configs.push({ name: `baseline ${path.basename(BASELINE)}`, ...(BASELINE.endsWith('.js') ? { core: BASELINE } : { ref: BASELINE }), thr: null, near: null });
   for (const thr of THRS) for (const near of NEARS) configs.push({ name: `thr ${thr ?? 'keep'} near ${near ?? 'keep'}`, core: null, thr, near });
   console.log(`${SET}: ${pages.length} pages, ${configs.length} configurations`);
   const all = [];

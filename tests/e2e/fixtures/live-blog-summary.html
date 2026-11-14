@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Live updates: flights resume after nationwide ground stop</title><style>
+/* Reduced from a CNN live story (Nov 2026): a pinned "Here's the latest"
+   summary of bulleted paragraphs sits beside a long feed of posts. The feed
+   holds most of the prose, so the content root must not narrow to it and
+   leave the summary out. */
+body { margin: 0; font: 17px/1.6 Georgia, serif; }
+.wrap { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+.live-story-post { border-top: 1px solid #ddd; padding: 12px 0; }
+.live-story-post__headline { font: 700 22px/1.3 sans-serif; margin: 8px 0; }
+.byline { font: 13px sans-serif; color: #555; }
+</style></head><body>
+<header><nav><a href="#">World</a> <a href="#">US</a> <a href="#">Politics</a> <a href="#">Business</a></nav></header>
+<section class="layout-live-story__main"><article class="live-story"><section class="body tabcontent"><div class="wrap">
+<h1 data-expect="plain">Live updates: flights resume after nationwide ground stop</h1>
+
+<div class="live-story__spotlight">
+<article class="live-story-post_pinned liveStoryPost">
+<header><h2 class="live-story-post__headline" data-expect="plain">Here's the latest</h2></header>
+<section class="live-story-post__body"><div class="live-story-post__content">
+<p class="paragraph" id="s1" data-expect="coloured">• <strong>Travel misery:</strong> Thousands of travelers face an uncertain weekend at airports across the country because of <a href="#">delays amid yesterday's nationwide hourslong ground stop</a>, forced by a telecommunications outage. Some domestic flights are now resuming but airlines face a battle to clear the backlog. Here's <a href="#">what to do</a> if your flight is canceled or delayed.</p>
+<p class="paragraph" id="s2" data-expect="coloured">• <strong>Possible cause:</strong> The administration has blamed <a href="#">old air traffic control technology</a> and overloaded routers, pointing to updates to those aging systems. The ground stop <a href="#">did not stem from a threat</a> and was <a href="#">not linked</a> to this week's disruptive cloud outage, the homeland security secretary said.</p>
+<p class="paragraph" id="s3" data-expect="coloured">• <strong>Calls for funding:</strong> The transportation secretary urged Congress to provide funds for improvements and said it's "going to be slow" to return to normal, adding that it shouldn't affect holiday travel later this month.</p>
+</div></section>
+<div><button>Read more</button></div>
+</article>
+</div>
+
+<div class="live-story__items-container">
+<script>
+// The feed: many posts, together several times the summary's prose.
+const s = 'Airline officials said the backlog would take most of the weekend to clear, and passengers were urged to check flight status before leaving for the airport. Several carriers waived change fees for travel through Monday. Airports reported long lines at rebooking desks overnight. ';
+document.write(Array.from({ length: 10 }, (_, i) => '<article class="live-story-post liveStoryPost"><header><h2 class="live-story-post__headline">Update ' + (10 - i) + ': airlines work through the backlog</h2><div class="byline">From the CNN team · ' + (i + 1) + ' hr ago</div></header><section class="live-story-post__body"><div class="live-story-post__content"><p class="paragraph" data-expect="coloured">' + s + '</p><p class="paragraph">' + s + '</p></div></section></article>').join(''));
+</script>
+</div>
+</div></section></article></section>
+<footer><p>© 2026 Cable News Network.</p></footer>
+</body></html>
