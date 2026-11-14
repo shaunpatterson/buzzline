@@ -11,7 +11,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = +(process.env.PORT || 8791);
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.pdf': 'application/pdf' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.pdf': 'application/pdf', '.png': 'image/png' };
 
 // pdf.js: from vendor/ when present (the Docker image downloads it at build
 // time; an extension page could not load it remotely either), else fetched

@@ -2,6 +2,7 @@
 *
 !manifest.json
 !src
+!icons
 !prototype/pdf-viewer
 prototype/pdf-viewer/vendor
 **/.DS_Store

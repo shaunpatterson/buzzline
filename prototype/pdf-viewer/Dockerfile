@@ -14,6 +14,7 @@ RUN mkdir -p prototype/pdf-viewer/vendor && cd prototype/pdf-viewer/vendor && \
 
 COPY manifest.json ./
 COPY src ./src
+COPY icons ./icons
 COPY prototype/pdf-viewer ./prototype/pdf-viewer
 
 ENV HOST=0.0.0.0 PORT=8791
