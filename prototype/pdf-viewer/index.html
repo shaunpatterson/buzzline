@@ -57,6 +57,12 @@
   .btn.icon { width: 24px; padding: 0; justify-content: center; }
   .btn[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
   .sep { width: 1px; height: 14px; background: var(--line); }
+  .grp { display: inline-flex; }
+  .grp .btn { width: 26px; padding: 0; justify-content: center; border-radius: 0; font-weight: 650; line-height: 1; }
+  .grp .btn:first-child { border-radius: 6px 0 0 6px; }
+  .grp .btn:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+  #smaller { font-size: 10px; } #larger { font-size: 15px; }
+  .btn:disabled { opacity: .4; cursor: default; }
   #progress { position: sticky; top: 32px; z-index: 19; height: 2px; }
   #progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 
@@ -92,11 +98,11 @@
 
   /* ---- B: reader ---- */
   .reflow { max-width: 720px; margin: 8px auto 0; padding: 56px 64px 64px; background: var(--paper); color: var(--ink); border-radius: 14px; box-shadow: var(--shadow);
-    font: 19px/1.7 "Iowan Old Style", "Palatino Linotype", Charter, Georgia, serif; }
-  .reflow h1 { font: 700 30px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; margin: 0 0 1.2em; }
-  .reflow h2 { font: 650 20px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.01em; margin: 2em 0 .5em; }
+    font: calc(19px * var(--size, 1))/1.7 "Iowan Old Style", "Palatino Linotype", Charter, Georgia, serif; }
+  .reflow h1 { font: 700 calc(30px * var(--size, 1))/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; margin: 0 0 1.2em; }
+  .reflow h2 { font: 650 calc(20px * var(--size, 1))/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.01em; margin: 2em 0 .5em; }
   .reflow p { margin: 0 0 1.05em; }
-  .reflow p.minor { font: 13.5px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--muted); }
+  .reflow p.minor { font: calc(13.5px * var(--size, 1))/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--muted); }
   .reflow .pagebreak { display: flex; align-items: center; gap: 12px; margin: 2em 0; font: 11px ui-sans-serif, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .reflow .pagebreak::before, .reflow .pagebreak::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   @media (max-width: 1180px) {
@@ -135,6 +141,10 @@
     <div class="schemewrap" id="schemeWrap">
       <button id="schemeBtn" title="Colour scheme" aria-haspopup="true"></button>
       <div class="schemes" id="schemes" aria-label="Colour scheme"></div>
+    </div>
+    <div class="grp" role="group" aria-label="Text size">
+      <button class="btn" id="smaller" title="Smaller text (−)">A</button>
+      <button class="btn" id="larger" title="Larger text (+)">A</button>
     </div>
     <span class="sep"></span>
     <button class="btn" id="bodyOnly" aria-pressed="true" title="Body text only: colour just the paragraphs, not every line of text">
@@ -177,6 +187,7 @@ const state = {
   scheme: params.get('scheme') || 'classic',
   dark: params.has('dark') ? params.get('dark') === '1' : matchMedia('(prefers-color-scheme: dark)').matches,
   bodyOnly: params.get('all') !== '1',
+  size: +params.get('size') || 1,   // text size: Reader font size, Original page zoom
   file: params.get('file') || 'https://arxiv.org/pdf/1706.03762',
   pages: [], bodyH: 0, name: '', total: 0
 };
@@ -307,7 +318,7 @@ function renderA(view) {
 // Pages are drawn at the width the window had on load; when it changes, scale
 // the drawn page and its strips together rather than redrawing.
 function fit() {
-  const target = pageWidth();
+  const target = pageWidth() * state.size;
   for (const sheet of document.querySelectorAll('.sheet')) {
     const f = target / +sheet.dataset.w;
     sheet.style.width = (+sheet.dataset.w * f) + 'px'; sheet.querySelector('.page').style.zoom = f;
@@ -350,6 +361,7 @@ function renderB(view) {
 
 function render() {
   document.body.classList.toggle('dark', state.dark);
+  applySize();
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
   const swatch = (k) => { const c = SCHEMES[k][state.dark ? 'dark' : 'light']; return `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; };
   for (const b of $('schemes').children) { b.setAttribute('aria-pressed', b.dataset.k === state.scheme); b.style.background = swatch(b.dataset.k); }
@@ -363,9 +375,32 @@ function render() {
   $('meta').textContent = `${shown} · ${coloured} ${state.variant === 'A' ? 'passages' : 'paragraphs'} coloured · ${SCHEMES[state.scheme].name}`;
   // full state, for the prototype: hover the status line
   $('meta').title = `view ${state.variant} · ${state.name} · ${state.pages.reduce((n, p) => n + p.blocks.reduce((m, b) => m + b.lines.length, 0), 0)} lines · ${state.pages.reduce((n, p) => n + p.blocks.length, 0)} blocks · body font ${state.bodyH}px · ${state.bodyOnly ? 'body text only' : 'all text'}`;
+  syncUrl();
+}
+function syncUrl() {
   const q = new URLSearchParams({ variant: state.variant, scheme: state.scheme, dark: state.dark ? '1' : '0' });
-  if (!state.bodyOnly) q.set('all', '1'); if (state.file) q.set('file', state.file);
+  if (!state.bodyOnly) q.set('all', '1'); if (state.size !== 1) q.set('size', state.size); if (state.file) q.set('file', state.file);
   history.replaceState(null, '', '?' + q);
+}
+
+// ---- text size: the Reader's font size, the Original's page zoom ----
+const SIZES = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8];
+function applySize() {
+  if (!SIZES.includes(state.size)) state.size = SIZES.reduce((a, b) => (Math.abs(b - state.size) < Math.abs(a - state.size) ? b : a));   // a hand-typed ?size=
+  document.documentElement.style.setProperty('--size', state.size);
+  const i = SIZES.indexOf(state.size), pct = Math.round(state.size * 100) + '%';
+  $('smaller').disabled = i <= 0; $('larger').disabled = i >= SIZES.length - 1;
+  $('smaller').title = `Smaller text (−) · now ${pct}`; $('larger').title = `Larger text (+) · now ${pct}`;
+  fit();
+}
+function resize(d) {
+  const i = SIZES.indexOf(state.size) + d;
+  if (i < 0 || i >= SIZES.length) return;
+  const at = scrollY / Math.max(1, document.documentElement.scrollHeight);   // keep the reading position
+  state.size = SIZES[i];
+  applySize(); syncUrl();
+  scrollTo(0, at * document.documentElement.scrollHeight);
+  dispatchEvent(new Event('resize'));   // lines rewrap: the extension recolours on resize
 }
 
 // ---- controls ----
@@ -373,12 +408,15 @@ for (const [k, s] of Object.entries(SCHEMES)) { const b = document.createElement
 $('schemeBtn').onclick = () => $('schemeWrap').classList.toggle('open');
 for (const b of document.querySelectorAll('.seg button')) b.onclick = () => { state.variant = b.dataset.v; render(); scrollTo(0, 0); };
 $('theme').onclick = () => { state.dark = !state.dark; render(); };
+$('smaller').onclick = () => resize(-1); $('larger').onclick = () => resize(1);
 $('bodyOnly').onclick = () => { state.bodyOnly = !state.bodyOnly; render(); };
 $('sprint').onclick = () => { const text = paragraphs().filter((p) => p.kind === 'body').map((p) => p.text).join(' '); if (text) window.__bzlnSprint(text); };
 addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select, [contenteditable]') || document.querySelector('.bzln-sprint-root') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const d = e.key === 'ArrowLeft' ? -1 : 1; state.variant = VARIANTS[(VARIANTS.indexOf(state.variant) + d + VARIANTS.length) % VARIANTS.length]; render(); }
   if (e.key === 'Escape') { $('openPanel').hidden = true; $('schemeWrap').classList.remove('open'); }
+  if (e.key === '+' || e.key === '=') resize(1);
+  if (e.key === '-' || e.key === '_') resize(-1);
 });
 
 const fromUrl = async (url) => {
