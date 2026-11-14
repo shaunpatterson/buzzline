@@ -282,9 +282,9 @@ function renderA(view) {
   const pal = SCHEMES[state.scheme][state.dark ? 'dark' : 'light'];
   let coloured = 0;
   state.pages.forEach((p, pi) => {
-    const sheet = document.createElement('section'); sheet.className = 'sheet'; sheet.style.width = p.w + 'px';
+    const sheet = document.createElement('section'); sheet.className = 'sheet'; sheet.dataset.w = p.w;
     const num = document.createElement('div'); num.className = 'num'; num.textContent = `Page ${pi + 1}`;
-    const el = document.createElement('div'); el.className = 'page'; el.style.height = p.h + 'px';
+    const el = document.createElement('div'); el.className = 'page'; el.style.width = p.w + 'px'; el.style.height = p.h + 'px';
     el.appendChild(p.canvas);
     for (const b of p.blocks) {
       if (state.bodyOnly && kind(b) !== 'body') continue;
@@ -300,8 +300,19 @@ function renderA(view) {
     }
     sheet.append(num, el); view.appendChild(sheet);
   });
+  fit();
   return coloured;
 }
+// Pages are drawn at the width the window had on load; when it changes, scale
+// the drawn page and its strips together rather than redrawing.
+function fit() {
+  const target = pageWidth();
+  for (const sheet of document.querySelectorAll('.sheet')) {
+    const f = target / +sheet.dataset.w;
+    sheet.style.width = (+sheet.dataset.w * f) + 'px'; sheet.querySelector('.page').style.zoom = f;
+  }
+}
+addEventListener('resize', fit);
 
 // ---- B: reflowed text; the extension's own pipeline colours it ----
 function paragraphs() {
