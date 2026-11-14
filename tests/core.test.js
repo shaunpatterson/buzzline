@@ -74,6 +74,32 @@ test('ensureContrast lifts every palette colour to 4.5:1 on mid-tone surfaces an
   assert.deepEqual(ensureContrast(light, null), light, 'unknown background: untouched');
 });
 
+test('kingfisher stays readable as stored and distinct under simulated colour blindness', () => {
+  // Machado, Oliveira & Fernandes 2009, severity 1.0, applied in linear RGB.
+  const M = {
+    protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+    deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+    tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]]
+  };
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const sim = (c, m) => { const l = [lin(c.r), lin(c.g), lin(c.b)]; return m.map((row) => Math.min(1, Math.max(0, row[0] * l[0] + row[1] * l[1] + row[2] * l[2]))); };
+  const lab = ([r, g, b]) => {
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b), Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+  };
+  const dE = (a, b, m) => { const x = lab(sim(a, m)), y = lab(sim(b, m)); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+  const white = { r: 255, g: 255, b: 255 };
+  for (const c of SCHEMES.kingfisher.light) assert.ok(contrastRatio(hexToRgb(c), white) >= 4.5, `light ${c} on white`);
+  for (const variant of ['light', 'dark']) {
+    const [anchor, a, , b] = SCHEMES.kingfisher[variant].map(hexToRgb);
+    for (const [kind, m] of Object.entries(M)) {
+      assert.ok(dE(a, b, m) >= 30, `${variant} accents apart for ${kind}`);
+      assert.ok(dE(a, anchor, m) >= 30 && dE(b, anchor, m) >= 30, `${variant} accents apart from anchor for ${kind}`);
+    }
+  }
+});
+
 test('promo wording lowers the prose score; text-derived features match explicit ones; CJK terminators count', () => {
   const { blockScore, textFeatures, SENTENCE_END_RX } = require('../src/core.js');
   const base = { chars: 150, words: 25, sentences: 3, linkFrac: 0, chain: '', ad: 0, rel: 0, side: 0, nav: 0, chrome: 0, main: 0, tag: 'p', wFrac: 0.5, cx: 0.5, prevChars: 0, nextChars: 0, sibProse: 0.5 };

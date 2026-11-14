@@ -88,6 +88,7 @@ pages and the OS dark mode are readable without a separate scheme.
 - **Classic** — black / blue / black / red (dark: light gray / light blue / light gray / peach)
 - **Ocean** — navy / teal / navy / seafoam
 - **Bumblebee** — near-black / gold / near-black / brown
+- **Kingfisher** — black / blue / black / orange; chosen to stay distinct for colour-blind readers
 - **High contrast** — black / pure blue / black / pure red
 
 ## What gets colored
