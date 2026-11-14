@@ -93,7 +93,10 @@ pages and the OS dark mode are readable without a separate scheme.
 ## What gets colored
 
 Only long stretches of prose a person reads. Buzzline first finds the page's
-main prose container, then scores each text block *before* colouring with a
+main prose container: it narrows into whichever section holds at least 75% of
+the prose, unless that would leave 400 or more characters of prose outside
+(so a live blog's pinned summary beside its feed of posts stays in; Reader and
+Sprint-page use the same container). It then scores each text block *before* colouring with a
 small MLP (`BLOCK_MODEL` in `src/core.js`: 26 features → 16 tanh units → 1,
 about 450 weights) on cheap features — length, link density, sentence shape,
 tag, width/position, whether its ancestors look like metadata, references,
