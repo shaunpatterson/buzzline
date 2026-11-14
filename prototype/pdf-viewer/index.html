@@ -21,47 +21,56 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html { scroll-padding-top: 76px; }
+  html { scroll-padding-top: 44px; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
   button, input { font: inherit; color: inherit; }
 
   /* ---- app bar ---- */
-  #bar { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px;
-    height: 60px; padding: 0 18px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
-  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-  .brand svg { flex: none; }
-  .doc { min-width: 0; }
-  #title { font-weight: 650; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
-  #meta { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--hover); border: 1px solid var(--line); border-radius: 10px; }
-  .seg button { border: 0; background: none; padding: 6px 16px; border-radius: 7px; cursor: pointer; font-weight: 550; color: var(--muted); transition: background .15s, color .15s; }
+  /* Title takes what is left; the view switch and tools never shrink or overlap.
+     As the window narrows: labels become icons, the scheme swatches fold into
+     one swatch with a menu, then the status line and the Sprint label go. */
+  #bar { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+    height: 32px; padding: 0 10px; font-size: 12.5px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
+  @media (min-width: 1400px) { #bar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .brand svg { flex: none; width: 18px; height: 18px; }
+  .doc { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  #title { flex: 0 1 auto; min-width: 0; font-weight: 650; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
+  #meta { flex: 0 10000 auto; min-width: 0; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seg { display: inline-flex; padding: 2px; gap: 1px; background: var(--hover); border: 1px solid var(--line); border-radius: 7px; }
+  .seg button { border: 0; background: none; padding: 1px 11px; line-height: 18px; border-radius: 5px; cursor: pointer; font-weight: 550; color: var(--muted); transition: background .15s, color .15s; }
   .seg button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px #0000001f; }
-  .tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
-  .schemes { display: flex; gap: 6px; padding-right: 4px; }
-  .schemes button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--panel); outline: 1px solid var(--line); cursor: pointer; padding: 0; transition: transform .12s; }
-  .schemes button:hover { transform: scale(1.08); }
+  .tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  .schemewrap { position: relative; display: flex; align-items: center; }
+  .schemes { display: flex; gap: 5px; padding-right: 2px; }
+  .schemes button, #schemeBtn { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--panel); outline: 1px solid var(--line); cursor: pointer; padding: 0; transition: transform .12s; }
+  .schemes button:hover, #schemeBtn:hover { transform: scale(1.08); }
   .schemes button[aria-pressed="true"] { outline: 2px solid var(--ink); }
-  .btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-weight: 550; white-space: nowrap; }
+  #schemeBtn { display: none; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-weight: 550; white-space: nowrap; }
+  .btn svg { width: 13px; height: 13px; }
+  #sprint svg { width: 8px; height: 9px; }
   .btn:hover { background: var(--hover); }
   .btn.primary { background: var(--accent); border-color: #0000001a; color: var(--accent-ink); }
   .btn.primary:hover { filter: brightness(1.05); background: var(--accent); }
-  .btn.icon { width: 34px; padding: 0; justify-content: center; }
+  .btn.icon { width: 24px; padding: 0; justify-content: center; }
   .btn[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-  .sep { width: 1px; height: 22px; background: var(--line); }
-  #progress { position: sticky; top: 60px; z-index: 19; height: 2px; }
+  .sep { width: 1px; height: 14px; background: var(--line); }
+  #progress { position: sticky; top: 32px; z-index: 19; height: 2px; }
   #progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 
   /* ---- open panel ---- */
-  #openPanel { position: fixed; top: 68px; right: 18px; z-index: 30; width: 380px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  #openPanel { position: fixed; top: 38px; right: 10px; z-index: 30; width: 380px; padding: 16px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  #openPanel .btn { height: 34px; padding: 0 13px; border-radius: 9px; }
   #openPanel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 650; }
   #openPanel .row { display: flex; gap: 8px; }
   #openPanel input[type=text] { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); }
   #openPanel input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   #openPanel .or { margin: 12px 0 8px; font-size: 12px; color: var(--muted); }
-  #pick { width: 100%; justify-content: center; border-style: dashed; height: 54px; color: var(--muted); }
+  #openPanel #pick { width: 100%; justify-content: center; border-style: dashed; height: 54px; color: var(--muted); }
 
   /* ---- states ---- */
-  #empty { display: grid; place-items: center; min-height: calc(100vh - 62px); text-align: center; color: var(--muted); padding: 24px; }
+  #empty { display: grid; place-items: center; min-height: calc(100vh - 34px); text-align: center; color: var(--muted); padding: 24px; }
   #empty .big { font-size: 17px; font-weight: 600; color: var(--ink); margin: 14px 0 4px; }
   .spinner { width: 30px; height: 30px; margin: 0 auto; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -89,7 +98,26 @@
   .reflow p.minor { font: 13.5px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--muted); }
   .reflow .pagebreak { display: flex; align-items: center; gap: 12px; margin: 2em 0; font: 11px ui-sans-serif, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .reflow .pagebreak::before, .reflow .pagebreak::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-  @media (max-width: 760px) { .reflow { padding: 32px 24px; border-radius: 0; } .schemes, .sep { display: none; } }
+  @media (max-width: 1180px) {
+    #bodyOnly .lbl, #openBtn .lbl { display: none; }
+    #bodyOnly, #openBtn { width: 24px; padding: 0; justify-content: center; }
+    .sep { display: none; }
+  }
+  @media (max-width: 920px) {
+    #schemeBtn { display: block; }
+    .schemes { display: none; position: absolute; top: 27px; right: -6px; padding: 8px 10px; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+    .schemewrap.open .schemes { display: flex; }
+  }
+  @media (max-width: 760px) { .reflow { padding: 32px 24px; border-radius: 0; } }
+  @media (max-width: 640px) {
+    #bar { gap: 8px; padding: 0 8px; }
+    #meta, #sprint .lbl { display: none; }
+    #sprint { width: 24px; padding: 0; justify-content: center; }
+    .seg button { padding: 1px 8px; }
+    .tools { gap: 5px; }
+    #openPanel { right: 8px; width: calc(100vw - 16px); }
+  }
+  @media (max-width: 470px) { .doc { display: none; } }
 </style>
 </head>
 <body>
@@ -103,15 +131,22 @@
     <button role="tab" data-v="B" title="Text reflowed into a reading column (→)">Reader</button>
   </div>
   <div class="tools">
-    <div class="schemes" id="schemes" aria-label="Colour scheme"></div>
+    <div class="schemewrap" id="schemeWrap">
+      <button id="schemeBtn" title="Colour scheme" aria-haspopup="true"></button>
+      <div class="schemes" id="schemes" aria-label="Colour scheme"></div>
+    </div>
     <span class="sep"></span>
-    <button class="btn" id="bodyOnly" aria-pressed="true" title="Colour only body paragraphs, or every line of text">Body text only</button>
+    <button class="btn" id="bodyOnly" aria-pressed="true" title="Body text only: colour just the paragraphs, not every line of text">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Body text only</span>
+    </button>
     <button class="btn icon" id="theme" aria-pressed="false" title="Dark page">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
     </button>
-    <button class="btn" id="openBtn">Open…</button>
-    <button class="btn primary" id="sprint" title="Flash the body text one word at a time">
-      <svg width="11" height="12" viewBox="0 0 11 12"><path d="M0 0l11 6-11 6Z" fill="currentColor"/></svg>Sprint
+    <button class="btn" id="openBtn" title="Open a PDF">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span class="lbl">Open…</span>
+    </button>
+    <button class="btn primary" id="sprint" title="Sprint: flash the body text one word at a time">
+      <svg width="11" height="12" viewBox="0 0 11 12"><path d="M0 0l11 6-11 6Z" fill="currentColor"/></svg><span class="lbl">Sprint</span>
     </button>
   </div>
 </header>
@@ -304,7 +339,9 @@ function renderB(view) {
 function render() {
   document.body.classList.toggle('dark', state.dark);
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
-  for (const b of $('schemes').children) { b.setAttribute('aria-pressed', b.dataset.k === state.scheme); const c = SCHEMES[b.dataset.k][state.dark ? 'dark' : 'light']; b.style.background = `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; }
+  const swatch = (k) => { const c = SCHEMES[k][state.dark ? 'dark' : 'light']; return `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; };
+  for (const b of $('schemes').children) { b.setAttribute('aria-pressed', b.dataset.k === state.scheme); b.style.background = swatch(b.dataset.k); }
+  $('schemeBtn').style.background = swatch(state.scheme); $('schemeBtn').title = `Colour scheme: ${SCHEMES[state.scheme].name}`;
   $('bodyOnly').setAttribute('aria-pressed', state.bodyOnly); $('theme').setAttribute('aria-pressed', state.dark);
   if (!state.pages.length) return;
   const view = $('view'); view.replaceChildren();
@@ -320,7 +357,8 @@ function render() {
 }
 
 // ---- controls ----
-for (const [k, s] of Object.entries(SCHEMES)) { const b = document.createElement('button'); b.dataset.k = k; b.title = s.name; b.onclick = () => { state.scheme = k; chrome.storage.sync.set({ scheme: k }); render(); }; $('schemes').appendChild(b); }
+for (const [k, s] of Object.entries(SCHEMES)) { const b = document.createElement('button'); b.dataset.k = k; b.title = s.name; b.onclick = () => { state.scheme = k; chrome.storage.sync.set({ scheme: k }); $('schemeWrap').classList.remove('open'); render(); }; $('schemes').appendChild(b); }
+$('schemeBtn').onclick = () => $('schemeWrap').classList.toggle('open');
 for (const b of document.querySelectorAll('.seg button')) b.onclick = () => { state.variant = b.dataset.v; render(); scrollTo(0, 0); };
 $('theme').onclick = () => { state.dark = !state.dark; render(); };
 $('bodyOnly').onclick = () => { state.bodyOnly = !state.bodyOnly; render(); };
@@ -328,7 +366,7 @@ $('sprint').onclick = () => { const text = paragraphs().filter((p) => p.kind ===
 addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, select, [contenteditable]') || document.querySelector('.bzln-sprint-root') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const d = e.key === 'ArrowLeft' ? -1 : 1; state.variant = VARIANTS[(VARIANTS.indexOf(state.variant) + d + VARIANTS.length) % VARIANTS.length]; render(); }
-  if (e.key === 'Escape') $('openPanel').hidden = true;
+  if (e.key === 'Escape') { $('openPanel').hidden = true; $('schemeWrap').classList.remove('open'); }
 });
 
 const fromUrl = async (url) => {
@@ -344,7 +382,7 @@ $('load').onclick = () => { const u = $('url').value.trim(); if (u) open(fromUrl
 $('url').onkeydown = (e) => { if (e.key === 'Enter') $('load').click(); };
 $('pick').onclick = () => $('file').click();
 $('file').onchange = () => { const f = $('file').files[0]; if (f) open(fromFile(f)); };
-addEventListener('pointerdown', (e) => { if (!e.target.closest('#openPanel, #openBtn')) $('openPanel').hidden = true; });
+addEventListener('pointerdown', (e) => { if (!e.target.closest('#openPanel, #openBtn')) $('openPanel').hidden = true; if (!e.target.closest('#schemeWrap')) $('schemeWrap').classList.remove('open'); });
 let drags = 0;
 addEventListener('dragenter', (e) => { e.preventDefault(); drags++; document.body.classList.add('dragging'); });
 addEventListener('dragleave', () => { if (--drags <= 0) { drags = 0; document.body.classList.remove('dragging'); } });
