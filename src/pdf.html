@@ -16,7 +16,7 @@
   }
   body.dark {
     --bg: #0d0f13; --panel: #171a20; --ink: #e9eaee; --muted: #969ca8; --line: #272b34; --hover: #20242c;
-    --shadow: 0 1px 2px #0006, 0 8px 28px #0008; --paper: #15171c;
+    --shadow: 0 1px 2px #0006, 0 8px 28px #0008; --paper: var(--shade, #1b1f27);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -79,6 +79,12 @@
   #empty .big { font-size: 17px; font-weight: 600; color: var(--ink); margin: 14px 0 4px; }
   .spinner { width: 30px; height: 30px; margin: 0 auto; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Dark page shade picker: 24 candidates, the choice is kept on this computer. */
+  #shades { position: fixed; right: 14px; bottom: 14px; z-index: 25; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); font-size: 11.5px; color: var(--muted); }
+  #shades .grid { display: grid; grid-template-columns: repeat(6, 26px); gap: 5px; margin-bottom: 7px; }
+  #shades button { height: 26px; border-radius: 5px; border: 1px solid #ffffff2e; padding: 0; cursor: pointer; }
+  #shades button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #shades code { color: var(--ink); font: 11.5px ui-monospace, Menlo, monospace; user-select: all; }
   #drop { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(4px); }
   #drop div { padding: 34px 52px; border: 2px dashed var(--accent); border-radius: 18px; font-size: 17px; font-weight: 600; background: var(--panel); }
   body.dragging #drop { display: grid; }
@@ -94,7 +100,7 @@
      page (after the strips) lifts the black to the surrounding blue-grey; a
      neutral grey reads as brown next to it. White text is unchanged. */
   body.dark .page { background: #000; }
-  body.dark .page::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: #1b1f27; mix-blend-mode: screen; }
+  body.dark .page::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--paper); mix-blend-mode: screen; }
   body.dark .page canvas { filter: invert(1) hue-rotate(180deg); }
   body.dark .strip { mix-blend-mode: multiply; }
 
@@ -175,6 +181,7 @@
 
 <div id="empty"><div><div class="spinner"></div><div class="big" id="emptyBig">Opening PDF…</div><div id="emptySmall"></div></div></div>
 <main id="view" hidden></main>
+<div id="shades" hidden><div class="grid"></div>Dark page <code id="shadeHex"></code></div>
 <div id="drop"><div>Drop a PDF to open it</div></div>
 
 <script src="core.js"></script>

@@ -205,6 +205,7 @@ function renderB(view) {
 
 function render() {
   document.body.classList.toggle('dark', state.dark);
+  $('shades').hidden = !state.dark;
   applySize();
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
   const swatch = (k) => { const c = SCHEMES[k][state.dark ? 'dark' : 'light']; return `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; };
@@ -244,6 +245,23 @@ function resize(d) {
   applySize(); syncUrl();
   scrollTo(0, at * document.documentElement.scrollHeight);
   dispatchEvent(new Event('resize'));   // lines rewrap: the extension recolours on resize
+}
+
+// ---- dark page shade: 24 candidates (4 tints x 6 depths) ----
+{
+  const TINTS = [[0, 0], [220, 16], [222, 34], [200, 22]];   // [hue, saturation %]: neutral, blue-grey, navy, teal-slate
+  const DEPTHS = [6, 9, 12, 15, 18, 22];                     // lightness %
+  const hex = (h, s, l) => { s /= 100; l /= 100; const a = s * Math.min(l, 1 - l), f = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }; return '#' + f(0) + f(8) + f(4); };
+  const pick = (c) => {
+    if (c) { document.documentElement.style.setProperty('--shade', c); localStorage.setItem('bzln-pdf-shade', c); }
+    $('shadeHex').textContent = c || '#1b1f27';
+    for (const b of $('shades').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.c === c);
+  };
+  for (const [h, s] of TINTS) for (const l of DEPTHS) {
+    const b = document.createElement('button'); b.dataset.c = hex(h, s, l); b.title = b.dataset.c; b.style.background = b.dataset.c; b.onclick = () => pick(b.dataset.c);
+    $('shades').firstElementChild.appendChild(b);
+  }
+  pick(localStorage.getItem('bzln-pdf-shade'));
 }
 
 // ---- controls ----
