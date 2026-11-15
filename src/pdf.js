@@ -54,7 +54,9 @@ function toBlocks(lines) {
   }
   return blocks;
 }
-const kind = (b) => (b.title ? 'title' : Math.abs(b.h - state.bodyH) / state.bodyH < 0.06 && b.lines.length >= 2 && b.chars >= 120 ? 'body'
+// Body text is the document's most common text size, or a little smaller: an
+// abstract is often set a size down, footnotes and captions two.
+const kind = (b) => (b.title ? 'title' : b.h > state.bodyH * 0.87 && b.h < state.bodyH * 1.06 && b.lines.length >= 2 && b.chars >= 120 ? 'body'
   : b.h > state.bodyH * 1.15 && b.chars < 90 ? 'heading' : 'minor');
 
 function busy(big, small = '', frac = 0) {
@@ -82,6 +84,7 @@ async function load(data, name) {
     const scale = W / page.getViewport({ scale: 1 }).width;
     const vp = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 0;   // empty until draw(): a new canvas is 300x150, which draw() would take for drawn
     canvas.style.width = vp.width + 'px'; canvas.style.height = vp.height + 'px';
     const items = [];
     for (const it of (await page.getTextContent()).items) {
@@ -96,8 +99,17 @@ async function load(data, name) {
   }
   state.bodyH = [...hist].sort((a, b) => b[1] - a[1])[0]?.[0] || 10;
   // the document title: the largest short block on the first page
-  const first = state.pages[0].blocks.filter((b) => b.chars < 200 && b.chars > 3).sort((a, b) => b.h - a.h)[0];
-  if (first && first.h > state.bodyH * 1.2) { first.title = true; state.title = first.text; } else state.title = name;
+  const front = state.pages[0].blocks;
+  const first = front.filter((b) => b.chars < 200 && b.chars > 3).sort((a, b) => b.h - a.h)[0];
+  if (first && first.h > state.bodyH * 1.2) {
+    // a title on several centred lines comes out as one block per line: join them
+    for (let next; (next = front[front.indexOf(first) + 1]) && Math.abs(next.h - first.h) / first.h < 0.03 && first.chars + next.chars < 300;) {
+      first.lines.push(...next.lines); first.text = join(first.text, next.text); first.chars = first.text.length;
+      first.left = Math.min(first.left, next.left); first.right = Math.max(first.right, next.right);
+      front.splice(front.indexOf(next), 1);
+    }
+    first.title = true; state.title = first.text;
+  } else state.title = name;
   $('progress').firstElementChild.style.width = '100%';
   setTimeout(() => { $('progress').firstElementChild.style.width = '0'; }, 400);
   $('empty').hidden = true; $('view').hidden = false;
