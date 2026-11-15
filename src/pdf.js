@@ -262,7 +262,7 @@ function resize(d) {
     const b = document.createElement('button'); b.dataset.c = hex(h, s, l); b.title = b.dataset.c; b.style.background = b.dataset.c; b.onclick = () => pick(b.dataset.c);
     $('shades').firstElementChild.appendChild(b);
   }
-  pick(localStorage.getItem('bzln-pdf-shade'));
+  pick(state.shades ? localStorage.getItem('bzln-pdf-shade') : null);   // without the flag, always the default
 }
 
 // ---- controls ----
