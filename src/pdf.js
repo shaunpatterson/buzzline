@@ -13,6 +13,7 @@ const state = {
   scheme: 'classic',   // the extension's setting, read below
   dark: params.has('dark') ? params.get('dark') === '1' : matchMedia('(prefers-color-scheme: dark)').matches,
   bodyOnly: params.get('all') !== '1',
+  shades: params.get('shades') === '1',   // show the dark page shade picker (off unless asked for)
   size: +params.get('size') || 1,   // text size: Reader font size, Original page zoom
   file: params.get('file') || '',
   doc: null, pages: [], bodyH: 0, name: '', total: 0
@@ -205,7 +206,7 @@ function renderB(view) {
 
 function render() {
   document.body.classList.toggle('dark', state.dark);
-  $('shades').hidden = !state.dark;
+  $('shades').hidden = !(state.dark && state.shades);
   applySize();
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
   const swatch = (k) => { const c = SCHEMES[k][state.dark ? 'dark' : 'light']; return `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; };
@@ -223,7 +224,7 @@ function render() {
 }
 function syncUrl() {
   const q = new URLSearchParams({ variant: state.variant, dark: state.dark ? '1' : '0' });
-  if (!state.bodyOnly) q.set('all', '1'); if (state.size !== 1) q.set('size', state.size); if (state.file) q.set('file', state.file);
+  if (!state.bodyOnly) q.set('all', '1'); if (state.size !== 1) q.set('size', state.size); if (state.shades) q.set('shades', '1'); if (state.file) q.set('file', state.file);
   history.replaceState(null, '', '?' + q);
 }
 
@@ -254,7 +255,7 @@ function resize(d) {
   const hex = (h, s, l) => { s /= 100; l /= 100; const a = s * Math.min(l, 1 - l), f = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }; return '#' + f(0) + f(8) + f(4); };
   const pick = (c) => {
     if (c) { document.documentElement.style.setProperty('--shade', c); localStorage.setItem('bzln-pdf-shade', c); }
-    $('shadeHex').textContent = c || '#1b1f27';
+    $('shadeHex').textContent = c || '#0d0e12';
     for (const b of $('shades').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.c === c);
   };
   for (const [h, s] of TINTS) for (const l of DEPTHS) {

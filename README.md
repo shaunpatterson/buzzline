@@ -77,6 +77,7 @@ page, so unusual layouts can group badly; "body text" is the document's most
 common text size; the dark page inverts figures too; scanned PDFs have no text
 to colour. The menu entry shows on every page, since the extension cannot tell
 a PDF tab from any other; on a non-PDF the reader says so.
+Adding `&shades=1` to the reader's address shows a picker for the dark page colour.
 
 ## Sprint (RSVP reader)
 
