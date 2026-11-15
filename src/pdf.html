@@ -90,7 +90,11 @@
   .page { position: relative; isolation: isolate; background: #fff; border-radius: 3px; box-shadow: var(--shadow); overflow: hidden; }
   .page canvas { display: block; }
   .strip { position: absolute; pointer-events: none; mix-blend-mode: screen; background-repeat: no-repeat; }
+  /* The inverted page is pure black. A cool dark grey screened over the finished
+     page (after the strips) lifts the black to the surrounding blue-grey; a
+     neutral grey reads as brown next to it. White text is unchanged. */
   body.dark .page { background: #000; }
+  body.dark .page::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: #1b1f27; mix-blend-mode: screen; }
   body.dark .page canvas { filter: invert(1) hue-rotate(180deg); }
   body.dark .strip { mix-blend-mode: multiply; }
 
