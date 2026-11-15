@@ -12,6 +12,7 @@
   const S = globalThis.BuzzlineSettings;
   let settings = S.normalize({});
   const currentHost = (location.hostname || '').toLowerCase();
+  const OWN_PAGE = /-extension:$/.test(location.protocol);   // the PDF reader: always coloured
   const LINK_CLASS = 'bzln-neutral-links';
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -647,7 +648,7 @@
   }
 
   function applyEnabledState() {
-    const shouldRun = settings.enabled && !S.isHostDisabled(settings, currentHost);
+    const shouldRun = OWN_PAGE || (settings.enabled && !S.isHostDisabled(settings, currentHost));
     if (shouldRun) enable();
     else disable();
   }

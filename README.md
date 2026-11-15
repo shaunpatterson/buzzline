@@ -57,6 +57,27 @@ Colours come from `::highlight()` rules, which win over the page's own text
 colour and are not subject to page CSP. Requires Chrome 105+, Firefox 140+ or
 Safari 17.2+; without the Highlight API Buzzline stays inactive.
 
+## PDFs
+
+A browser's built-in PDF viewer draws the page itself, so an extension cannot
+colour its text. Right-click a PDF → **Buzzline → Open in PDF reader** (or
+right-click a link to a `.pdf` → "Open link in PDF reader") opens it in
+Buzzline's own reader in a new tab, with two views:
+
+- **Original**: the PDF's own layout, with the gradient laid over each line of
+  body text.
+- **Reader**: the text reflowed into one reading column and coloured like any
+  web page. Text size is adjustable (`+` / `-`), and Sprint works on it.
+
+The reader fetches the PDF itself, which is why the manifest asks for host
+access to all sites. For PDFs on your own computer, either turn on "Allow
+access to file URLs" for Buzzline at `chrome://extensions`, or use Open… in the
+reader and choose the file. Limits: paragraphs are found by position on the
+page, so unusual layouts can group badly; "body text" is the document's most
+common text size; the dark page inverts figures too; scanned PDFs have no text
+to colour. The menu entry shows on every page, since the extension cannot tell
+a PDF tab from any other; on a non-PDF the reader says so.
+
 ## Sprint (RSVP reader)
 
 Every colored block gets a small yellow launcher icon at its start. Click
@@ -209,6 +230,8 @@ src/background.js      Service worker: context menu + keyboard commands (loads c
 src/content.css        Base CSS + launcher + Sprint/Reader overlay styles
 src/popup.html/css/js  Toolbar popup (toggle, scheme picker, per-site scheme, feedback)
 src/options.html/css/js Settings page (Sprint, coloring, blocked sites, feedback export)
+src/pdf.html/js        PDF reader page: Original (strips over the drawn page) and Reader (reflowed text)
+src/vendor/pdfjs/      pdf.js 4.10.38 (Mozilla, Apache-2.0), unmodified: draws pages, lists their text
 tests/*.test.js        Unit tests (node) and fixture-page tests (headless Chrome)
 tests/e2e/             Fixture harness + pages; crawl.js / label.js (System1) / build_dataset.js / train.js training pipeline; dataset
 scripts/build_firefox.js  Writes dist/firefox/ with a Firefox manifest (event page, gecko id)

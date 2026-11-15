@@ -2,6 +2,3 @@
 # Raw page dumps (scraped article text) must never be committed
 tests/e2e/data/raw/
 dist/
-
-# pdf.js downloaded for the PDF prototype (the Docker image fetches its own)
-prototype/pdf-viewer/vendor/

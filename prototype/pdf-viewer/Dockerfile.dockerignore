@@ -1,8 +1,0 @@
-# Build context for prototype/pdf-viewer/Dockerfile: only what the viewer serves.
-*
-!manifest.json
-!src
-!icons
-!prototype/pdf-viewer
-prototype/pdf-viewer/vendor
-**/.DS_Store
