@@ -43,7 +43,10 @@ function toBlocks(lines) {
   for (const l of lines) {
     const gap = prev ? (l.y - l.h) - prev.y : 0;
     const brk = !b || Math.abs(l.h - b.h) / b.h > 0.08 || gap > 0.6 * b.h || l.y < prev.y - 0.5 * b.h ||
-      Math.abs(l.left - b.left) > 3 * b.h || (b.lines.length >= 2 && l.left > b.left + 0.7 * b.h);   // indent = new paragraph
+      Math.abs(l.left - b.left) > 3 * b.h ||
+      // A line indented from the one before starts a new paragraph. Measured against the previous
+      // line, not the block's edge: a bullet's text is indented from its marker on every line.
+      (b.lines.length >= 2 && l.left > prev.left + 0.7 * b.h);
     if (brk) { b = { lines: [], h: l.h, left: l.left, right: l.right }; blocks.push(b); }
     b.lines.push(l); b.left = Math.min(b.left, l.left); b.right = Math.max(b.right, l.right);
     prev = l;
