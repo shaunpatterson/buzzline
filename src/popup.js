@@ -19,6 +19,11 @@ for (const key of Object.keys(SCHEMES)) {
 }
 
 const siteOnly = document.getElementById('site-only');
+const rulerSelect = document.getElementById('ruler');
+// Ruler: "off", or on with the chosen style (the style is kept while it is off).
+rulerSelect.addEventListener('change', () => {
+  chrome.storage.sync.set(rulerSelect.value === 'off' ? { rulerOn: false } : { rulerOn: true, rulerStyle: rulerSelect.value });
+});
 let siteSchemes = {};
 let globalScheme = 'classic';
 
@@ -27,6 +32,7 @@ S.load((s) => {
   globalScheme = s.scheme;
   siteSchemes = s.siteSchemes;
   schemeSelect.value = globalScheme;
+  rulerSelect.value = s.rulerOn ? s.rulerStyle : 'off';
   renderPreview();
   initSiteRow(s.disabledHosts);
 });
@@ -105,6 +111,7 @@ function sendToActiveTab(intent) {
 
 document.getElementById('sprint-page-btn').addEventListener('click', () => sendToActiveTab(I.sprintPage()));
 document.getElementById('open-reader-btn').addEventListener('click', () => sendToActiveTab(I.openReader()));
+document.getElementById('pace-page-btn').addEventListener('click', () => sendToActiveTab(I.pacePage()));
 document.getElementById('fb-no').addEventListener('click', () => sendToActiveTab(I.feedback('no')));
 document.getElementById('fb-yes').addEventListener('click', () => sendToActiveTab(I.feedback('yes')));
 

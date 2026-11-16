@@ -13,12 +13,14 @@ const MENU_PAGE = 'bzln-sprint-page';
 const MENU_READER = 'bzln-open-reader';
 const MENU_PDF = 'bzln-open-pdf';
 const MENU_PDF_LINK = 'bzln-open-pdf-link';
+const MENU_PACE = 'bzln-pace-page';
 
 function installMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: MENU_SELECTION, title: 'Sprint-read selection', contexts: ['selection'] });
     chrome.contextMenus.create({ id: MENU_PAGE, title: 'Sprint-read this page', contexts: ['page'] });
     chrome.contextMenus.create({ id: MENU_READER, title: 'Open Buzzline reader', contexts: ['page'] });
+    chrome.contextMenus.create({ id: MENU_PACE, title: 'Pace-read from here', contexts: ['page', 'selection'] });
     // The background cannot tell whether a tab shows a PDF, so this entry is on
     // every page; the PDF reader says so when the address is not a PDF.
     chrome.contextMenus.create({ id: MENU_PDF, title: 'Open in PDF reader', contexts: ['page', 'frame'] });
@@ -43,11 +45,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_SELECTION) I.send(tab.id, I.sprintPage(info.selectionText));
   else if (info.menuItemId === MENU_PAGE) I.send(tab.id, I.sprintPage());
   else if (info.menuItemId === MENU_READER) I.send(tab.id, I.openReader());
+  else if (info.menuItemId === MENU_PACE) I.send(tab.id, I.pacePage());
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'toggle-enabled') {
     S.load((s) => chrome.storage.sync.set({ enabled: !s.enabled }));
+    return;
+  }
+  if (command === 'toggle-ruler') {
+    S.load((s) => chrome.storage.sync.set({ rulerOn: !s.rulerOn }));
     return;
   }
   const intent = I.forCommand(command);

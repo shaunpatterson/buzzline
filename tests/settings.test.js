@@ -11,7 +11,9 @@ const messy = { scheme: 'nope', sprintWpm: 505, sprintChunk: 7, sprintDelays: { 
 test('normalize fills every key with its default', () => {
   assert.deepEqual(normalize({}), {
     enabled: false, scheme: 'classic', disabledHosts: [], siteSchemes: {}, linkUnderline: true,
-    sprintWpm: 500, sprintChunk: 1, sprintDelays: { period: 2.4, comma: 1.7 }
+    sprintWpm: 500, sprintChunk: 1, sprintDelays: { period: 2.4, comma: 1.7 },
+    rulerOn: false, rulerStyle: 'shade', rulerLines: 1, pacerWpm: 250, pacerUnit: 'word',
+    readerFont: 'auto', readerSize: 1, readerLetter: 0, readerWord: 0, readerLine: 1.7, readerWidth: 0
   });
 });
 
@@ -66,4 +68,36 @@ test('withSiteScheme sets and removes without mutating its input', () => {
   assert.deepEqual(withSiteScheme(map, 'b.com', 'y'), { 'a.com': 'x', 'b.com': 'y' });
   assert.deepEqual(withSiteScheme(map, 'a.com', null), {});
   assert.deepEqual(map, { 'a.com': 'x' });
+});
+
+test('pacer speed is clamped to its own range, apart from Sprint\'s', () => {
+  assert.equal(normalize({ pacerWpm: 5000 }).pacerWpm, 700);
+  assert.equal(normalize({ pacerWpm: 20 }).pacerWpm, 100);
+  assert.equal(normalize({ pacerWpm: 'abc' }).pacerWpm, 250);
+  assert.equal(normalize({ sprintWpm: 1200 }).sprintWpm, 900, 'Sprint keeps its range');
+});
+
+test('ruler and pacer choices fall back to a known value', () => {
+  const s = normalize({ rulerStyle: 'rainbow', rulerLines: 2, pacerUnit: 'page', rulerOn: 1 });
+  assert.deepEqual([s.rulerStyle, s.rulerLines, s.pacerUnit, s.rulerOn], ['shade', 1, 'word', true]);
+  assert.equal(normalize({ rulerLines: '3' }).rulerLines, 3);
+});
+
+test('reader text settings snap to their steps and stay in range', () => {
+  const s = normalize({ readerFont: 'comic', readerSize: 1.2, readerLetter: 0.5, readerWord: 9, readerLine: 0.5, readerWidth: 62 });
+  assert.equal(s.readerFont, 'auto');
+  assert.equal(s.readerSize, 1.15);
+  assert.equal(s.readerLetter, 0.12);
+  assert.equal(s.readerWord, 0.4);
+  assert.equal(s.readerLine, 1.3);
+  assert.equal(s.readerWidth, 60);
+  assert.equal(normalize({ readerWidth: 0 }).readerWidth, 0, '0 means the whole card');
+  assert.equal(normalize({ readerWidth: 'x' }).readerWidth, 0);
+});
+
+test('word spacing never falls below letter spacing', () => {
+  assert.equal(normalize({ readerLetter: 0.08, readerWord: 0 }).readerWord, 0.08);
+  assert.equal(normalize({ readerLetter: 0.04, readerWord: 0.3 }).readerWord, 0.3, 'a wider word gap is kept');
+  const s = normalize({ readerLetter: 0.1 });
+  assert.deepEqual(normalize(s), s, 'still idempotent');
 });

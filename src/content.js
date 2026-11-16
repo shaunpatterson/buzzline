@@ -548,6 +548,25 @@
       });
       header.appendChild(speakBtn);
     }
+    // Text panel: font, size, spacing and width. Changes show at once, and are
+    // stored so the PDF reader and later pages use them too.
+    const TS = globalThis.BuzzlineTextStyle;
+    const textBtn = document.createElement('button');
+    textBtn.className = 'bzln-reader-btn';
+    textBtn.type = 'button';
+    textBtn.textContent = 'Aa';
+    textBtn.title = 'Text settings';
+    textBtn.setAttribute('aria-haspopup', 'true');
+    const tpWrap = document.createElement('div');
+    tpWrap.className = 'bzln-reader-tpwrap';
+    tpWrap.hidden = true;
+    const panel = TS.createPanel(settings, {
+      size: true,
+      onLive: (s) => { TS.apply(root, s); window.dispatchEvent(new Event('resize')); }   // lines rewrap: recolour
+    });
+    tpWrap.appendChild(panel.el);
+    textBtn.addEventListener('click', () => { tpWrap.hidden = !tpWrap.hidden; });
+    header.appendChild(textBtn);
     header.appendChild(closeBtn);
 
     const body = document.createElement('div');
@@ -564,6 +583,8 @@
 
     card.appendChild(header);
     card.appendChild(body);
+    card.appendChild(tpWrap);
+    TS.apply(root, settings);
     root.appendChild(backdrop);
     root.appendChild(card);
     document.documentElement.appendChild(root);
@@ -573,7 +594,7 @@
       if (e.key === 'Escape') { e.preventDefault(); closeReader(); }
     };
     document.addEventListener('keydown', onKey, true);
-    readerState = { root, onKey, paras, speakBtn, speaking: false, utter: null };
+    readerState = { root, onKey, paras, speakBtn, panel, speaking: false, utter: null };
 
     function stopSpeaking() {
       if (!readerState) return;
@@ -653,11 +674,21 @@
     else disable();
   }
 
-  S.load((s) => { settings = s; applyEnabledState(); });
+  // ---------- Ruler and pacer ----------
+  // Independent of colouring: they run whether or not the gradient is on, but
+  // not on blocked sites (the ruler) and only when asked for (the pacer).
+  function applyRuler() {
+    const Ruler = globalThis.BuzzlineRuler;
+    if (settings.rulerOn && !S.isHostDisabled(settings, currentHost)) Ruler.start({ style: settings.rulerStyle, lines: settings.rulerLines });
+    else Ruler.stop();
+  }
+  const pacePage = () => globalThis.BuzzlinePacer.start(settings);
+
+  S.load((s) => { settings = s; applyEnabledState(); applyRuler(); });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type) console.log('[Buzzline] message received:', msg.type);
-    I.handle(msg, { sprintPage, openReader, feedback: recordFeedback });
+    I.handle(msg, { sprintPage, openReader, pacePage, feedback: recordFeedback });
   });
 
   // "This should / shouldn't be coloured": store the selected block's feature
@@ -695,6 +726,13 @@
     }
     if ('disabledHosts' in changes) {
       applyEnabledState();
+    }
+    if ('rulerOn' in changes || 'rulerStyle' in changes || 'rulerLines' in changes || 'disabledHosts' in changes) applyRuler();
+    if ('pacerWpm' in changes || 'pacerUnit' in changes || 'sprintDelays' in changes) globalThis.BuzzlinePacer.update(settings);
+    if (readerState && globalThis.BuzzlineTextStyle.READER_KEYS.some((k) => k in changes)) {
+      globalThis.BuzzlineTextStyle.apply(readerState.root, settings);
+      readerState.panel.set(settings);
+      window.dispatchEvent(new Event('resize'));
     }
   });
 

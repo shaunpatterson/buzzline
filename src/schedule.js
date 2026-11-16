@@ -56,7 +56,28 @@
   // How long a chunk stays on screen at `wpm`.
   const holdMs = (chunk, wpm) => (60000 / wpm) * chunk.beats;
 
-  const api = { buildSchedule, holdMs };
+  // Sentences over a chunk list. A chunk ends a sentence when its text ends in
+  // . ! or ? (optionally followed by a closing quote or bracket).
+  const endsSentence = (chunk) => /[.!?][")\]]?$/.test(chunk.text);
+  // [start, end] (inclusive chunk indexes) of the sentence containing `index`.
+  function sentenceSpan(chunks, index) {
+    let start = index;
+    while (start > 0 && !endsSentence(chunks[start - 1])) start--;
+    let end = index;
+    while (end < chunks.length - 1 && !endsSentence(chunks[end])) end++;
+    return { start, end };
+  }
+  // Where "back one sentence" lands: the start of the current sentence, or of
+  // the one before when already at the start. This gives back the look-back
+  // that one-word-at-a-time reading removes.
+  function backSentence(chunks, index) {
+    const { start } = sentenceSpan(chunks, index);
+    return start < index ? start : sentenceSpan(chunks, Math.max(0, index - 1)).start;
+  }
+  // The start of the next sentence, or the last chunk.
+  const nextSentence = (chunks, index) => Math.min(chunks.length - 1, sentenceSpan(chunks, index).end + 1);
+
+  const api = { buildSchedule, holdMs, holdFactor, sentenceSpan, backSentence, nextSentence };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.BuzzlineSchedule = api;
 })();

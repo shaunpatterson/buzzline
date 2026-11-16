@@ -10,7 +10,9 @@
   "commands": {
     "toggle-enabled": { "suggested_key": { "default": "Alt+B" }, "description": "Toggle Buzzline coloring" },
     "sprint-page": { "suggested_key": { "default": "Alt+S" }, "description": "Sprint-read the selection or the page" },
-    "open-reader": { "description": "Open the Buzzline reader" }
+    "open-reader": { "description": "Open the Buzzline reader" },
+    "toggle-ruler": { "suggested_key": { "default": "Alt+R" }, "description": "Toggle the reading ruler" },
+    "pace-page": { "suggested_key": { "default": "Alt+P" }, "description": "Start or stop the moving-highlight pacer" }
   },
   "action": {
     "default_popup": "src/popup.html",
@@ -23,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/core.js", "src/settings.js", "src/intents.js", "src/schedule.js", "src/gradient.js", "src/blocks.js", "src/reading.js", "src/sprint.js", "src/content.js"],
+      "js": ["src/core.js", "src/settings.js", "src/textstyle.js", "src/intents.js", "src/schedule.js", "src/gradient.js", "src/blocks.js", "src/lines.js", "src/pagegeo.js", "src/ruler.js", "src/reading.js", "src/sprint.js", "src/pacer.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle",
       "all_frames": false

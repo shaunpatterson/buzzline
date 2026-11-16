@@ -19,10 +19,18 @@
     <label for="scheme">Color scheme</label>
     <select id="scheme"></select>
     <label class="site-only"><input type="checkbox" id="site-only" disabled> Only for this site</label>
+    <label for="ruler">Reading ruler (Alt+R)</label>
+    <select id="ruler">
+      <option value="off">Off</option>
+      <option value="shade">Shade: dim the rest</option>
+      <option value="bar">Bar: tint the line</option>
+      <option value="underline">Underline</option>
+    </select>
   </section>
   <section class="actions">
     <button type="button" id="sprint-page-btn" class="action-btn">Sprint this page</button>
     <button type="button" id="open-reader-btn" class="action-btn">Open reader</button>
+    <button type="button" id="pace-page-btn" class="action-btn" title="A highlight moves through the text and the page follows it (Alt+P)">Pace this page</button>
   </section>
   <section class="site-row" id="site-row" hidden>
     <div class="site-label">

@@ -65,6 +65,9 @@
   #progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 
   /* ---- open panel ---- */
+  #textWrap { position: fixed; top: 38px; right: 10px; z-index: 30; }
+  #textWrap .bzln-tp { background: var(--panel); color: var(--ink); border-color: var(--line); }
+  #textWrap .bzln-tp-label, #textWrap .bzln-tp-value, #textWrap .bzln-tp-note { color: var(--muted); }
   #openPanel { position: fixed; top: 38px; right: 10px; z-index: 30; width: 380px; padding: 16px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
   #openPanel .btn { height: 34px; padding: 0 13px; border-radius: 9px; }
   #openPanel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 650; }
@@ -105,8 +108,10 @@
   body.dark .strip { mix-blend-mode: multiply; }
 
   /* ---- B: reader ---- */
-  .reflow { max-width: 720px; margin: 8px auto 0; padding: 56px 64px 64px; background: var(--paper); color: var(--ink); border-radius: 14px; box-shadow: var(--shadow);
-    font: calc(19px * var(--size, 1))/1.7 "Iowan Old Style", "Palatino Linotype", Charter, Georgia, serif; }
+  .reflow { max-width: min(720px, var(--bzln-r-width, 720px)); margin: 8px auto 0; padding: 56px 64px 64px; background: var(--paper); color: var(--ink); border-radius: 14px; box-shadow: var(--shadow);
+    font: calc(19px * var(--size, 1)) "Iowan Old Style", "Palatino Linotype", Charter, Georgia, serif;
+    font-family: var(--bzln-r-font, "Iowan Old Style", "Palatino Linotype", Charter, Georgia, serif);
+    line-height: var(--bzln-r-line, 1.7); letter-spacing: var(--bzln-r-letter, normal); word-spacing: var(--bzln-r-word, normal); }
   .reflow h1 { font: 700 calc(30px * var(--size, 1))/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.02em; margin: 0 0 1.2em; }
   .reflow h2 { font: 650 calc(20px * var(--size, 1))/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.01em; margin: 2em 0 .5em; }
   .reflow p { margin: 0 0 1.05em; }
@@ -154,6 +159,7 @@
       <button class="btn" id="smaller" title="Smaller text (−)">A</button>
       <button class="btn" id="larger" title="Larger text (+)">A</button>
     </div>
+    <button class="btn icon" id="textBtn" title="Text settings: font, spacing, width (Reader view)" aria-haspopup="true" hidden><span style="font-weight:650;font-size:12px">Aa</span></button>
     <span class="sep"></span>
     <button class="btn" id="bodyOnly" aria-pressed="true" title="Body text only: colour just the paragraphs, not every line of text">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Body text only</span>
@@ -181,17 +187,23 @@
 
 <div id="empty"><div><div class="spinner"></div><div class="big" id="emptyBig">Opening PDF…</div><div id="emptySmall"></div></div></div>
 <main id="view" hidden></main>
+<div id="textWrap" hidden></div>
 <div id="shades" hidden><div class="grid"></div>Dark page <code id="shadeHex"></code></div>
 <div id="drop"><div>Drop a PDF to open it</div></div>
 
 <script src="core.js"></script>
 <script src="settings.js"></script>
+<script src="textstyle.js"></script>
 <script src="intents.js"></script>
 <script src="schedule.js"></script>
 <script src="gradient.js"></script>
 <script src="blocks.js"></script>
+<script src="lines.js"></script>
+<script src="pagegeo.js"></script>
+<script src="ruler.js"></script>
 <script src="reading.js"></script>
 <script src="sprint.js"></script>
+<script src="pacer.js"></script>
 <script src="content.js"></script>
 <script type="module" src="pdf.js"></script>
 </body>

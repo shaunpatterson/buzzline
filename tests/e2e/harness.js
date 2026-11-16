@@ -103,6 +103,7 @@ function extensionSources() {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
   return {
     scripts: manifest.content_scripts[0].js.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')),
+    styles: (manifest.content_scripts[0].css || []).map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')),
     collector: fs.readFileSync(path.join(__dirname, 'collector.js'), 'utf8')
   };
 }

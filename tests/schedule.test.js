@@ -48,3 +48,22 @@ test('holdMs converts beats at the given wpm', () => {
 test('text without words gives an empty schedule', () => {
   assert.deepEqual(buildSchedule('   ', settings()), []);
 });
+
+test('sentenceSpan finds the sentence around a chunk; closing quotes still end it', () => {
+  const { sentenceSpan } = require('../src/schedule.js');
+  const c = buildSchedule('One two. Three "four." Five six seven', settings());   // one two. | three "four." | five six seven
+  assert.deepEqual(texts(c), ['One', 'two.', 'Three', '"four."', 'Five', 'six', 'seven']);
+  assert.deepEqual(sentenceSpan(c, 0), { start: 0, end: 1 });
+  assert.deepEqual(sentenceSpan(c, 3), { start: 2, end: 3 });
+  assert.deepEqual(sentenceSpan(c, 6), { start: 4, end: 6 });   // the last sentence has no full stop
+});
+
+test('back one sentence goes to the start of this sentence, then to the one before', () => {
+  const { backSentence, nextSentence } = require('../src/schedule.js');
+  const c = buildSchedule('One two. Three four five. Six seven', settings());
+  assert.equal(backSentence(c, 4), 2, 'mid-sentence: back to its start');
+  assert.equal(backSentence(c, 2), 0, 'at a sentence start: the previous sentence');
+  assert.equal(backSentence(c, 0), 0, 'cannot go before the first chunk');
+  assert.equal(nextSentence(c, 2), 5);
+  assert.equal(nextSentence(c, 6), 6, 'stays on the last chunk');
+});

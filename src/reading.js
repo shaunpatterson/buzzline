@@ -567,6 +567,9 @@
     return out;
   }
 
-  const api = { refresh, changed, resetRoot, candidateText, isReadingText: acceptTextNode, isBigPage, editableLeaves: findGradientLeaves, extract: extractAllBlocks, sectionText, sectionStarts };
+  // The current content root and its peers (empty until a refresh() has found one).
+  const roots = () => (contentRoot && contentRoot.isConnected ? [contentRoot, ...rootPeers] : []);
+
+  const api = { refresh, changed, resetRoot, roots, candidateText, isReadingText: acceptTextNode, isBigPage, editableLeaves: findGradientLeaves, extract: extractAllBlocks, sectionText, sectionStarts };
   globalThis.BuzzlineReading = api;
 })();

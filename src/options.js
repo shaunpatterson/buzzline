@@ -124,6 +124,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       : [];
     renderHosts(next);
   }
+  if (changes.pacerWpm) setPaceUI(S.clampPace(Number(changes.pacerWpm.newValue)));
+  if (changes.pacerUnit) unitEl.value = changes.pacerUnit.newValue;
+  if (changes.rulerOn) rulerOnEl.checked = !!changes.rulerOn.newValue;
+  if (changes.rulerStyle) rulerStyleEl.value = changes.rulerStyle.newValue;
+  if (changes.rulerLines) rulerLinesEl.value = String(changes.rulerLines.newValue);
   if (changes.sprintWpm) {
     const v = S.clampWpm(Number(changes.sprintWpm.newValue));
     setWpmUI(v);
@@ -160,6 +165,21 @@ const chunkEl = document.getElementById('sprint-chunk');
 const periodEl = document.getElementById('delay-period');
 const commaEl = document.getElementById('delay-comma');
 
+// --- Pacer and reading ruler ---
+const paceSlider = document.getElementById('pacer-wpm');
+const paceValue = document.getElementById('pacer-wpm-value');
+const unitEl = document.getElementById('pacer-unit');
+const rulerOnEl = document.getElementById('ruler-on');
+const rulerStyleEl = document.getElementById('ruler-style');
+const rulerLinesEl = document.getElementById('ruler-lines');
+function setPaceUI(v) { paceSlider.value = String(v); paceValue.textContent = `${v} wpm`; }
+paceSlider.addEventListener('input', () => { paceValue.textContent = `${S.clampPace(parseInt(paceSlider.value, 10))} wpm`; });
+paceSlider.addEventListener('change', () => chrome.storage.sync.set({ pacerWpm: S.clampPace(parseInt(paceSlider.value, 10)) }, flashSaved));
+unitEl.addEventListener('change', () => chrome.storage.sync.set({ pacerUnit: unitEl.value }, flashSaved));
+rulerOnEl.addEventListener('change', () => chrome.storage.sync.set({ rulerOn: rulerOnEl.checked }, flashSaved));
+rulerStyleEl.addEventListener('change', () => chrome.storage.sync.set({ rulerStyle: rulerStyleEl.value }, flashSaved));
+rulerLinesEl.addEventListener('change', () => chrome.storage.sync.set({ rulerLines: Number(rulerLinesEl.value) }, flashSaved));
+
 // --- initial values (after every element lookup) ---
 S.load((s) => {
   setWpmUI(s.sprintWpm);
@@ -168,6 +188,11 @@ S.load((s) => {
   chunkEl.value = String(s.sprintChunk);
   periodEl.value = String(s.sprintDelays.period);
   commaEl.value = String(s.sprintDelays.comma);
+  setPaceUI(s.pacerWpm);
+  unitEl.value = s.pacerUnit;
+  rulerOnEl.checked = s.rulerOn;
+  rulerStyleEl.value = s.rulerStyle;
+  rulerLinesEl.value = String(s.rulerLines);
 });
 chunkEl.addEventListener('change', () => chrome.storage.sync.set({ sprintChunk: Number(chunkEl.value) }, flashSaved));
 const saveDelays = () => {

@@ -26,6 +26,8 @@ async (initialSync, sources) => {
     runtime: { onMessage: { addListener: (fn) => onMessage.push(fn) } }
   };
 
+  // The manifest's content CSS, as the browser would apply it (overlay layout, ::highlight rules).
+  for (const css of sources.styles || []) { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); }
   for (const src of sources.scripts) (0, eval)(src);
   const collectorSrc = sources.collector;
 

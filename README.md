@@ -50,8 +50,9 @@ On mid-tone surfaces (grey cards, tinted callouts) every palette colour is
 nudged toward white or black until it reaches 4.5:1 contrast.
 
 Keyboard: `Alt+B` toggles coloring, `Alt+S` sprint-reads the selection or the
-page (change them at `chrome://extensions/shortcuts`). Right-click → "Sprint-read
-selection", "Sprint-read this page" or "Open Buzzline reader".
+page, `Alt+R` toggles the reading ruler, `Alt+P` starts or stops the pacer
+(change them at `chrome://extensions/shortcuts`). Right-click → "Sprint-read
+selection", "Sprint-read this page", "Open Buzzline reader" or "Pace-read from here".
 
 Colours come from `::highlight()` rules, which win over the page's own text
 colour and are not subject to page CSP. Requires Chrome 105+, Firefox 140+ or
@@ -98,6 +99,34 @@ you change the sentence/comma hold multipliers and flash 1–3 words at a time.
 
 The Reader overlay has a "Read aloud" button (browser text-to-speech) that
 highlights the paragraph being spoken; click any paragraph to jump there.
+
+## Reading aids
+
+Four aids beyond the gradient. None of them is claimed to make you read faster:
+the research behind each is in `docs/research/reading-tools-report.html`.
+
+- **Reading ruler** (`Alt+R`, or the popup / settings): a band that marks the line
+  under the pointer. Styles: shade (dim the rest), bar (tint), underline; one or
+  three lines. `Alt+Up` / `Alt+Down` move it a line. Works on any page, in the
+  Reader, and in both PDF views. It runs even when coloring is off, but not on
+  blocked sites. In the one controlled study (Niklaus et al., CHI 2023) a ruler sped
+  up readers with dyslexia and did not change comprehension.
+- **Pacer** (`Alt+P`, right-click → "Pace-read from here", or the popup): a
+  highlight moves through the page's reading text, from the selection or the top of
+  the view, and the page follows it. One word or one line at a time. Space pauses,
+  Left/Right step, Up/Down change speed, click text to jump, Esc stops. Unlike
+  Sprint the text stays on screen, so you can look back. It starts at 250 wpm
+  (settings: 100-700) and uses Sprint's pauses at commas and sentence ends. On a PDF
+  it works in the Reader view, not Original (that text is a picture).
+- **Sprint safeguards**: one-word-at-a-time reading removes the look-back, and
+  comprehension drops. `Up` goes back one sentence (`Down` forward one), the
+  sentence around the current word shows faded while paused, and above 700 wpm a
+  note says it suits skimming.
+- **Reader text** (the `Aa` button in the Reader and in the PDF reader's Reader
+  view): font (default, sans, serif, wide), size, letter / word / line spacing and
+  column width. Nothing is on by default. Fonts are a choice, not a treatment: a 2026
+  meta-analysis of dyslexia fonts found no effect. Word spacing never falls below
+  letter spacing, since widening letters alone slows reading.
 
 ## Color schemes
 
@@ -224,7 +253,12 @@ src/settings.js        Storage keys, defaults, validation and edits (shared by e
 src/blocks.js          Block features: what a text block is and what the classifier scores
 src/reading.js         Reading text: content root, reading runs, Reader/Sprint extraction
 src/schedule.js        Sprint schedule: chunks, ORP pivot and hold per chunk (pure, node-tested)
-src/sprint.js          RSVP reader overlay: renders the schedule, timer, keys, speed slider
+src/sprint.js          RSVP reader overlay: renders the schedule, timer, keys, speed slider, back-a-sentence and context peek
+src/lines.js           Line geometry for the ruler: rects -> lines, band (pure, node-tested)
+src/pagegeo.js         Page geometry shared by ruler and pacer: caret, text rects, scrolling
+src/ruler.js           Reading ruler: band that follows the pointer, snapped to line boxes
+src/pacer.js           Pacer: moving word/line highlight at a set speed, page follows
+src/textstyle.js       Reader text: settings -> CSS variables (pure, node-tested) and the Aa panel
 src/gradient.js        Line gradient: measured line fragments + palette -> coloured runs (pure, node-tested)
 src/intents.js         Intents: what popup, context menu and keys can ask a page to do (shared sender/receiver)
 src/background.js      Service worker: context menu + keyboard commands (loads core/settings/intents)

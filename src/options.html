@@ -38,6 +38,41 @@
 
     <section class="group">
       <div class="group-head">
+        <h2>Pacer</h2>
+        <p class="sub">A highlight moves through the page at this speed and the page follows it (Alt+P). The text stays on screen, so you can still look back. Start near your normal speed: adults average about 240 words per minute on non-fiction, and in one 2026 study comprehension held at slower speeds and fell at about 400.</p>
+      </div>
+      <div class="speed-row">
+        <input type="range" id="pacer-wpm" min="100" max="700" step="10" value="250">
+        <span class="wpm-value" id="pacer-wpm-value">250 wpm</span>
+      </div>
+      <div class="sprint-grid">
+        <label>Highlight
+          <select id="pacer-unit" class="wide"><option value="word">One word at a time</option><option value="line">One line at a time</option></select>
+        </label>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head">
+        <h2>Reading ruler</h2>
+        <p class="sub">A band that marks the line under the pointer (Alt+R turns it on or off; Alt+Up and Alt+Down move it a line). In one study it sped up readers with dyslexia and did not change comprehension; readers without dyslexia read no faster with it but preferred it.</p>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="ruler-on">
+        <span>Show the reading ruler</span>
+      </label>
+      <div class="sprint-grid">
+        <label>Style
+          <select id="ruler-style" class="wide"><option value="shade">Shade: dim the rest</option><option value="bar">Bar: tint the line</option><option value="underline">Underline</option></select>
+        </label>
+        <label>Lines
+          <select id="ruler-lines"><option value="1">1</option><option value="3">3</option></select>
+        </label>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head">
         <h2>Coloring</h2>
         <p class="sub">How colored text interacts with the page's own styling.</p>
       </div>

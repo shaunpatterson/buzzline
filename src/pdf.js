@@ -22,7 +22,15 @@ const DRAW_AHEAD = '1500px 0px';   // pages are drawn as they come near the wind
 const pageWidth = () => Math.max(320, Math.min(900, innerWidth - 32));
 
 const { SCHEMES } = globalThis.BuzzlineCore;
-state.scheme = (await new Promise((done) => globalThis.BuzzlineSettings.load(done))).scheme;
+let loaded = await new Promise((done) => globalThis.BuzzlineSettings.load(done));
+state.scheme = loaded.scheme;
+
+// ---- reader text (font, spacing, width): the Reader overlay's panel, here for the Reader view ----
+const TS = globalThis.BuzzlineTextStyle;
+TS.apply(document.documentElement, loaded);
+const textPanel = TS.createPanel(loaded, { size: false, onLive: (s) => { TS.apply(document.documentElement, s); window.dispatchEvent(new Event('resize')); } });
+$('textWrap').appendChild(textPanel.el);
+$('textBtn').onclick = () => { $('textWrap').hidden = !$('textWrap').hidden; };
 // Join two lines of one paragraph: a word broken at the line end loses its
 // hyphen ("transduc-" + "tion"); a hyphenated compound keeps it ("English-" + "to-German").
 const join = (a, b) => (!a ? b : /[a-z]-$/.test(a) && /^[a-z]/.test(b) ? (/^[a-z]+-/.test(b) ? a + b : a.slice(0, -1) + b) : a + ' ' + b);
@@ -211,6 +219,8 @@ function render() {
   document.body.classList.toggle('dark', state.dark);
   document.documentElement.dataset.bzlnTheme = state.dark ? 'dark' : 'light';   // Sprint follows it (content.css)
   $('shades').hidden = !(state.dark && state.shades);
+  $('textBtn').hidden = state.variant !== 'B';   // the text settings are for the reflowed view
+  if (state.variant !== 'B') $('textWrap').hidden = true;
   applySize();
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
   const swatch = (k) => { const c = SCHEMES[k][state.dark ? 'dark' : 'light']; return `linear-gradient(135deg, ${c[1]} 15%, ${c[3]} 85%)`; };
@@ -272,6 +282,11 @@ function resize(d) {
 // ---- controls ----
 for (const [k, s] of Object.entries(SCHEMES)) { const b = document.createElement('button'); b.dataset.k = k; b.title = s.name; b.onclick = () => { $('schemeWrap').classList.remove('open'); chrome.storage.sync.set({ scheme: k }); }; $('schemes').appendChild(b); }
 // The scheme is the extension's setting: the popup changes it here too.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'sync' || !TS.READER_KEYS.some((k) => k in changes)) return;
+  loaded = globalThis.BuzzlineSettings.merge(loaded, changes);
+  TS.apply(document.documentElement, loaded); textPanel.set(loaded); window.dispatchEvent(new Event('resize'));
+});
 chrome.storage.onChanged.addListener((changes, area) => { if (area === 'sync' && changes.scheme && SCHEMES[changes.scheme.newValue]) { state.scheme = changes.scheme.newValue; render(); } });
 $('schemeBtn').onclick = () => $('schemeWrap').classList.toggle('open');
 for (const b of document.querySelectorAll('.seg button')) b.onclick = () => { state.variant = b.dataset.v; render(); scrollTo(0, 0); };
@@ -304,12 +319,29 @@ $('load').onclick = () => { const u = $('url').value.trim(); if (u) open(fromUrl
 $('url').onkeydown = (e) => { if (e.key === 'Enter') $('load').click(); };
 $('pick').onclick = () => $('file').click();
 $('file').onchange = () => { const f = $('file').files[0]; if (f) open(fromFile(f)); };
-addEventListener('pointerdown', (e) => { if (!e.target.closest('#openPanel, #openBtn')) $('openPanel').hidden = true; if (!e.target.closest('#schemeWrap')) $('schemeWrap').classList.remove('open'); });
+addEventListener('pointerdown', (e) => { if (!e.target.closest('#openPanel, #openBtn')) $('openPanel').hidden = true; if (!e.target.closest('#textWrap, #textBtn')) $('textWrap').hidden = true; if (!e.target.closest('#schemeWrap')) $('schemeWrap').classList.remove('open'); });
 let drags = 0;
 addEventListener('dragenter', (e) => { e.preventDefault(); drags++; document.body.classList.add('dragging'); });
 addEventListener('dragleave', () => { if (--drags <= 0) { drags = 0; document.body.classList.remove('dragging'); } });
 addEventListener('dragover', (e) => e.preventDefault());
 addEventListener('drop', (e) => { e.preventDefault(); drags = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) open(fromFile(f)); });
+
+// Line boxes for the reading ruler in the Original view, whose text is a canvas:
+// the lines of the text block under a viewport point, in viewport pixels.
+window.__bzlnLinesAt = (x, y) => {
+  if (state.variant !== 'A') return null;
+  const page = document.elementFromPoint(x, y)?.closest('.page');
+  const p = page && state.pages[[...document.querySelectorAll('.page')].indexOf(page)];
+  if (!p) return null;
+  const r = page.getBoundingClientRect(), f = r.width / p.w;
+  for (const b of p.blocks) {
+    if (x < r.left + b.left * f - 24 || x > r.left + b.right * f + 24) continue;
+    const lines = b.lines.map((l) => ({ top: r.top + (l.y - l.h * 0.92) * f, bottom: r.top + (l.y + l.h * 0.3) * f, left: r.left + l.left * f, right: r.left + l.right * f }));
+    const index = globalThis.BuzzlineLines.indexAt(lines, y);
+    if (index >= 0) return { lines, index, left: r.left + b.left * f, right: r.left + b.right * f, el: page };
+  }
+  return null;
+};
 
 render();
 if (state.file) open(fromUrl(state.file));

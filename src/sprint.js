@@ -8,7 +8,9 @@
   // What is flashed and for how long comes from the Sprint schedule
   // (schedule.js); this file renders chunks and ticks the timer.
   const S = globalThis.BuzzlineSettings;
-  const { buildSchedule, holdMs } = globalThis.BuzzlineSchedule;
+  const { buildSchedule, holdMs, sentenceSpan, backSentence, nextSentence } = globalThis.BuzzlineSchedule;
+  // Above this, studies found one-word-at-a-time reading remembered less than normal reading.
+  const FAST_WPM = 700;
 
   let session = null;
   let buildToken = 0;
@@ -33,6 +35,22 @@
       `${session.index + 1} / ${session.chunks.length}`;
     const pct = ((session.index + 1) / session.chunks.length) * 100;
     session.progressEl.style.width = pct.toFixed(2) + '%';
+    renderContext();
+  }
+
+  // While paused, the sentence around the current word, faded, with the word
+  // marked: one-word-at-a-time reading removes the look-back, this gives it back.
+  function renderContext() {
+    const c = session.contextEl;
+    c.classList.toggle('bzln-sprint-context-on', !session.playing);
+    if (session.playing) return;
+    const { start, end } = sentenceSpan(session.chunks, session.index);
+    c.textContent = '';
+    for (let i = start; i <= end; i++) {
+      const span = document.createElement(i === session.index ? 'mark' : 'span');
+      span.textContent = session.chunks[i].text + (i < end ? ' ' : '');
+      c.appendChild(span);
+    }
   }
 
   function step() {
@@ -44,6 +62,7 @@
       if (session.index >= session.chunks.length - 1) {
         session.playing = false;
         session.playBtn.textContent = '▶';
+        renderContext();
         return;
       }
       session.index++;
@@ -65,6 +84,7 @@
     session.playing = false;
     if (session.timer) { clearTimeout(session.timer); session.timer = null; }
     session.playBtn.textContent = '▶';
+    renderContext();
   }
 
   function togglePlay() {
@@ -80,6 +100,16 @@
       Math.min(session.chunks.length - 1, session.index + delta)
     );
     render();
+  }
+
+  // Jump to a chunk and keep playing if it was playing.
+  function jumpTo(index) {
+    if (!session) return;
+    const wasPlaying = session.playing;
+    pause();
+    session.index = index;
+    render();
+    if (wasPlaying && index < session.chunks.length - 1) play();
   }
 
   function el(tag, cls, text) {
@@ -132,6 +162,8 @@
     progress.appendChild(progressFill);
 
     const controls = el('div', 'bzln-sprint-controls');
+    const backSentenceBtn = el('button', 'bzln-sprint-ctrl', '↶');
+    backSentenceBtn.type = 'button'; backSentenceBtn.title = 'Back one sentence (↑)';
     const prevBtn = el('button', 'bzln-sprint-ctrl', '◀');
     prevBtn.type = 'button'; prevBtn.title = 'Previous word (←)';
     const playBtn = el('button', 'bzln-sprint-ctrl bzln-sprint-play', '▶');
@@ -140,6 +172,7 @@
     nextBtn.type = 'button'; nextBtn.title = 'Next word (→)';
     nextBtn.style.transform = 'none';
     const counter = el('div', 'bzln-sprint-counter', `1 / ${chunks.length}`);
+    controls.appendChild(backSentenceBtn);
     controls.appendChild(prevBtn);
     controls.appendChild(playBtn);
     controls.appendChild(nextBtn);
@@ -159,12 +192,17 @@
     slider.className = 'bzln-sprint-slider';
     speedWrap.appendChild(speedLabel);
     speedWrap.appendChild(slider);
+    const hint = el('div', 'bzln-sprint-hint', `Above ${FAST_WPM} wpm, studies found people remember less than from normal reading. Fast like this suits skimming.`);
+    hint.hidden = startWpm < FAST_WPM;
 
     card.appendChild(header);
     card.appendChild(stage);
+    const context = el('div', 'bzln-sprint-context');
+    card.appendChild(context);
     card.appendChild(progress);
     card.appendChild(controls);
     card.appendChild(speedWrap);
+    card.appendChild(hint);
 
     root.appendChild(backdrop);
     root.appendChild(card);
@@ -182,6 +220,7 @@
       postEl: post,
       counterEl: counter,
       progressEl: progressFill,
+      contextEl: context,
       playBtn,
       onKey: null
     };
@@ -189,6 +228,7 @@
     backdrop.addEventListener('click', close);
     closeBtn.addEventListener('click', close);
     playBtn.addEventListener('click', togglePlay);
+    backSentenceBtn.addEventListener('click', () => jumpTo(backSentence(session.chunks, session.index)));
     prevBtn.addEventListener('click', () => step1(-1));
     nextBtn.addEventListener('click', () => step1(1));
     slider.addEventListener('input', () => {
@@ -196,6 +236,7 @@
       if (!Number.isFinite(v)) return;
       session.wpm = v;
       wpmText.textContent = `${v} wpm`;
+      hint.hidden = v < FAST_WPM;
     });
 
     session.onKey = (e) => {
@@ -204,6 +245,8 @@
       else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); step1(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); step1(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); jumpTo(backSentence(session.chunks, session.index)); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); jumpTo(nextSentence(session.chunks, session.index)); }
     };
     document.addEventListener('keydown', session.onKey, true);
 
