@@ -38,7 +38,37 @@ button[data-bzln-launcher] > svg {
   z-index: 2147483646;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
-  color: #1b1b1b;
+  /* Theme: the system's, unless the page states its own with
+     <html data-bzln-theme="light|dark"> (the PDF reader does). */
+  --bzln-sprint-card: #fbfbfb;
+  --bzln-sprint-ink: #1b1b1b;
+  --bzln-sprint-muted: #6a6a6a;
+  --bzln-sprint-orp: #d40000;
+  --bzln-sprint-accent: #1f4fb0;
+  color: var(--bzln-sprint-ink);
+}
+@media (prefers-color-scheme: dark) {
+  .bzln-sprint-root {
+    --bzln-sprint-card: #1e1e1e;
+    --bzln-sprint-ink: #eaeaea;
+    --bzln-sprint-muted: #9a9a9a;
+    --bzln-sprint-orp: #ff6a6a;
+    --bzln-sprint-accent: #7fb7ff;
+  }
+}
+:root[data-bzln-theme="light"] .bzln-sprint-root {
+  --bzln-sprint-card: #fbfbfb;
+  --bzln-sprint-ink: #1b1b1b;
+  --bzln-sprint-muted: #6a6a6a;
+  --bzln-sprint-orp: #d40000;
+  --bzln-sprint-accent: #1f4fb0;
+}
+:root[data-bzln-theme="dark"] .bzln-sprint-root {
+  --bzln-sprint-card: #1e1e1e;
+  --bzln-sprint-ink: #eaeaea;
+  --bzln-sprint-muted: #9a9a9a;
+  --bzln-sprint-orp: #ff6a6a;
+  --bzln-sprint-accent: #7fb7ff;
 }
 .bzln-sprint-backdrop {
   position: absolute;
@@ -51,14 +81,11 @@ button[data-bzln-launcher] > svg {
   top: 50%;
   transform: translate(-50%, -50%);
   width: min(92vw, 640px);
-  background: #fbfbfb;
+  background: var(--bzln-sprint-card);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
   padding: 18px 22px 20px;
   box-sizing: border-box;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-card { background: #1e1e1e; color: #eaeaea; }
 }
 
 .bzln-sprint-header {
@@ -71,10 +98,7 @@ button[data-bzln-launcher] > svg {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: #6a6a6a;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-title { color: #9a9a9a; }
+  color: var(--bzln-sprint-muted);
 }
 .bzln-sprint-close {
   all: unset;
@@ -116,10 +140,7 @@ button[data-bzln-launcher] > svg {
 }
 .bzln-sprint-pre  { justify-self: end;   white-space: pre; }
 .bzln-sprint-post { justify-self: start; white-space: pre; }
-.bzln-sprint-orp  { color: #d40000; }
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-orp { color: #ff6a6a; }
-}
+.bzln-sprint-orp  { color: var(--bzln-sprint-orp); }
 
 .bzln-sprint-progress {
   margin-top: 14px;
@@ -130,12 +151,9 @@ button[data-bzln-launcher] > svg {
 }
 .bzln-sprint-progress-fill {
   height: 100%;
-  background: #1f4fb0;
+  background: var(--bzln-sprint-accent);
   width: 0%;
   transition: width 0.08s linear;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-progress-fill { background: #7fb7ff; }
 }
 
 .bzln-sprint-controls {
@@ -162,11 +180,8 @@ button[data-bzln-launcher] > svg {
 .bzln-sprint-counter {
   margin-left: auto;
   font-size: 12px;
-  color: #6a6a6a;
+  color: var(--bzln-sprint-muted);
   font-variant-numeric: tabular-nums;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-counter { color: #9a9a9a; }
 }
 
 .bzln-sprint-speed {
@@ -179,11 +194,8 @@ button[data-bzln-launcher] > svg {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #6a6a6a;
+  color: var(--bzln-sprint-muted);
   white-space: nowrap;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-speed-label { color: #9a9a9a; }
 }
 .bzln-sprint-wpm {
   margin-left: 4px;
@@ -192,10 +204,7 @@ button[data-bzln-launcher] > svg {
 }
 .bzln-sprint-slider {
   flex: 1;
-  accent-color: #1f4fb0;
-}
-@media (prefers-color-scheme: dark) {
-  .bzln-sprint-slider { accent-color: #7fb7ff; }
+  accent-color: var(--bzln-sprint-accent);
 }
 
 /* ---------- Reader overlay ---------- */

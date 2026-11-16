@@ -209,6 +209,7 @@ function renderB(view) {
 
 function render() {
   document.body.classList.toggle('dark', state.dark);
+  document.documentElement.dataset.bzlnTheme = state.dark ? 'dark' : 'light';   // Sprint follows it (content.css)
   $('shades').hidden = !(state.dark && state.shades);
   applySize();
   for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-selected', b.dataset.v === state.variant);
