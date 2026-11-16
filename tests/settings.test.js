@@ -98,6 +98,9 @@ test('reader text settings snap to their steps and stay in range', () => {
 test('word spacing never falls below letter spacing', () => {
   assert.equal(normalize({ readerLetter: 0.08, readerWord: 0 }).readerWord, 0.08);
   assert.equal(normalize({ readerLetter: 0.04, readerWord: 0.3 }).readerWord, 0.3, 'a wider word gap is kept');
-  const s = normalize({ readerLetter: 0.1 });
-  assert.deepEqual(normalize(s), s, 'still idempotent');
+  for (const letter of [0.01, 0.03, 0.05, 0.07, 0.09, 0.11]) {   // off the word-spacing grid too
+    const s = normalize({ readerLetter: letter });
+    assert.ok(s.readerWord >= s.readerLetter, `word >= letter at ${letter}`);
+    assert.deepEqual(normalize(s), s, `idempotent at letter ${letter}`);
+  }
 });

@@ -61,7 +61,7 @@
       readerSize: nearest(READER_SIZES, +raw.readerSize, 1),
       readerLetter: letter,
       // Wider letter spacing alone slows reading; the gap between words must grow at least as much.
-      readerWord: Math.max(clampStep(+raw.readerWord, READER.word), letter),
+      readerWord: Math.max(clampStep(+raw.readerWord, READER.word), +(Math.ceil(letter / READER.word.step - 1e-9) * READER.word.step).toFixed(2)),
       readerLine: clampStep(+raw.readerLine, READER.line),
       readerWidth: +raw.readerWidth === 0 || !Number.isFinite(+raw.readerWidth) ? READER.width.default : clampStep(+raw.readerWidth, READER.width)
     };

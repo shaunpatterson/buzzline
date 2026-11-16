@@ -494,6 +494,15 @@
     }
   }
 
+  // The Reader's lines rewrap when its text settings change: recolour them. This
+  // calls the colouring session directly; a synthetic window "resize" would also
+  // reach the host site's own handlers.
+  let repaintTimer = null;
+  function repaintSoon() {
+    clearTimeout(repaintTimer);
+    repaintTimer = setTimeout(() => { if (session) session.repaint(); }, 120);
+  }
+
   // ---------- Reader overlay ----------
   let readerState = null;
 
@@ -562,7 +571,7 @@
     tpWrap.hidden = true;
     const panel = TS.createPanel(settings, {
       size: true,
-      onLive: (s) => { TS.apply(root, s); window.dispatchEvent(new Event('resize')); }   // lines rewrap: recolour
+      onLive: (s) => { TS.apply(root, s); repaintSoon(); }   // lines rewrap: recolour
     });
     tpWrap.appendChild(panel.el);
     textBtn.addEventListener('click', () => { tpWrap.hidden = !tpWrap.hidden; });
@@ -732,7 +741,7 @@
     if (readerState && globalThis.BuzzlineTextStyle.READER_KEYS.some((k) => k in changes)) {
       globalThis.BuzzlineTextStyle.apply(readerState.root, settings);
       readerState.panel.set(settings);
-      window.dispatchEvent(new Event('resize'));
+      repaintSoon();
     }
   });
 

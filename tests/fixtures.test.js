@@ -246,7 +246,7 @@ test('Reader text: the panel opens and the stored text settings reach the open R
   const after = await css();
   assert.equal(after.size, '20.8px');
   assert.equal(after.letter, '1.04px');
-  assert.equal(after.word, '1.04px', 'word spacing is lifted to match the letter spacing');
+  assert.equal(after.word, '1.248px', 'word spacing is lifted to the first step at or above the letter spacing (0.06em)');
   assert.equal(after.line, '41.6px');
   assert.ok(parseFloat(after.maxWidth) < after.card, `the column is narrower than the card: ${after.maxWidth}`);
 });

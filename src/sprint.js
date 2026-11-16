@@ -9,7 +9,7 @@
   // (schedule.js); this file renders chunks and ticks the timer.
   const S = globalThis.BuzzlineSettings;
   const { buildSchedule, holdMs, sentenceSpan, backSentence, nextSentence } = globalThis.BuzzlineSchedule;
-  // Above this, studies found one-word-at-a-time reading remembered less than normal reading.
+  // One study (Acklin and Papesh 2017, read via secondary summaries) found normal text beat one-word-at-a-time reading at 700 and 1,000 wpm.
   const FAST_WPM = 700;
 
   let session = null;
@@ -192,7 +192,7 @@
     slider.className = 'bzln-sprint-slider';
     speedWrap.appendChild(speedLabel);
     speedWrap.appendChild(slider);
-    const hint = el('div', 'bzln-sprint-hint', `Above ${FAST_WPM} wpm, studies found people remember less than from normal reading. Fast like this suits skimming.`);
+    const hint = el('div', 'bzln-sprint-hint', `At ${FAST_WPM} wpm and above, one study found people remembered less than from normal reading. This speed suits skimming.`);
     hint.hidden = startWpm < FAST_WPM;
 
     card.appendChild(header);

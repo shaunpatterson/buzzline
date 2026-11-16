@@ -120,8 +120,8 @@ the research behind each is in `docs/research/reading-tools-report.html`.
   it works in the Reader view, not Original (that text is a picture).
 - **Sprint safeguards**: one-word-at-a-time reading removes the look-back, and
   comprehension drops. `Up` goes back one sentence (`Down` forward one), the
-  sentence around the current word shows faded while paused, and above 700 wpm a
-  note says it suits skimming.
+  sentence around the current word shows faded while paused, and from 700 wpm a
+  note says it suits skimming (one study found less was remembered at that speed).
 - **Reader text** (the `Aa` button in the Reader and in the PDF reader's Reader
   view): font (default, sans, serif, wide), size, letter / word / line spacing and
   column width. Nothing is on by default. Fonts are a choice, not a treatment: a 2026
