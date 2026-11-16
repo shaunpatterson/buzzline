@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What else could Buzzline add? Reading tools, apps and hacks</title>
+<style>
+  :root {
+    --bg: #f4f2ed; --panel: #ffffff; --ink: #1b1c20; --muted: #62666f; --line: #e0ddd5; --soft: #f1efe9;
+    --accent: #f7c948; --accent-ink: #1a1a1a; --link: #1f4fb0;
+    --good: #1c7a4a; --good-bg: #e3f3ea; --mid: #8a6100; --mid-bg: #fbf0d2; --weak: #5a5f69; --weak-bg: #ebebee; --bad: #a82a2a; --bad-bg: #f8e3e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0e12; --panel: #171a20; --ink: #e9eaee; --muted: #9aa0ab; --line: #272b34; --soft: #1d2027;
+      --link: #7fb7ff;
+      --good: #6fd09a; --good-bg: #16301f; --mid: #f0c25a; --mid-bg: #33290e; --weak: #a9aeb9; --weak-bg: #24272e; --bad: #ff8d8d; --bad-bg: #3a1c1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--link); }
+  main { max-width: 980px; margin: 0 auto; padding: 0 20px 80px; }
+  header.top { background: var(--panel); border-bottom: 1px solid var(--line); }
+  header.top > div { max-width: 980px; margin: 0 auto; padding: 34px 20px 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .eyebrow i { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  h1 { font-size: clamp(26px, 4.4vw, 38px); line-height: 1.15; letter-spacing: -.02em; margin: 10px 0 12px; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 720px; margin: 0; }
+  h2 { font-size: 24px; letter-spacing: -.015em; margin: 56px 0 6px; }
+  h2 + p.sub { margin: 0 0 18px; color: var(--muted); }
+  h3 { font-size: 18px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  .takeaway { margin-top: 26px; display: grid; gap: 12px; }
+  .takeaway p { margin: 0; padding: 12px 16px; background: var(--soft); border-left: 4px solid var(--accent); border-radius: 0 8px 8px 0; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; margin: 0 0 18px; box-shadow: 0 1px 2px #0000000a; }
+  .card .head { display: flex; gap: 14px; align-items: flex-start; }
+  .rank { flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 750; display: grid; place-items: center; font-size: 18px; }
+  .card h3 { font-size: 21px; letter-spacing: -.01em; }
+  .tag { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.mid { background: var(--mid-bg); color: var(--mid); }
+  .pill.weak { background: var(--weak-bg); color: var(--weak); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.plain { background: var(--soft); color: var(--muted); border: 1px solid var(--line); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; margin-top: 16px; }
+  .cols h4 { margin: 12px 0 4px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .cols p, .cols ul { margin: 0 0 8px; font-size: 15px; }
+  .cols ul { padding-left: 20px; }
+  .cols li { margin-bottom: 4px; }
+  .callout { margin-top: 14px; padding: 10px 14px; background: var(--soft); border-radius: 8px; font-size: 14.5px; color: var(--muted); }
+  .callout b { color: var(--ink); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 720px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--soft); position: sticky; top: 0; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { font-weight: 650; white-space: nowrap; }
+
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 14px 8px; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { color: var(--muted); font-size: 14px; padding: 6px 6px 8px; }
+  svg text { font-family: inherit; }
+
+  .nots { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  .not { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--bad); border-radius: 10px; padding: 14px 16px; }
+  .not h3 { font-size: 16px; }
+  .not p { font-size: 14.5px; margin: 6px 0 0; color: var(--muted); }
+  .own { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .own > div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .own p { font-size: 14.5px; margin: 6px 0 0; color: var(--muted); }
+  ul.plain { padding-left: 20px; margin: 0; }
+  ul.plain li { margin-bottom: 6px; }
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } .card { padding: 18px 16px; } h2 { font-size: 21px; } }
+</style>
+</head>
+<body>
+<header class="top"><div>
+  <div class="eyebrow"><i></i> Buzzline research · 16 November 2026</div>
+  <h1>What else could Buzzline add?</h1>
+  <p class="lede">I surveyed reading apps, devices, browser extensions and research studies for ideas worth borrowing. Three stand out, and a few popular ones are best left alone.</p>
+</div></header>
+
+<main>
+
+<div class="takeaway">
+  <p><b>The top three:</b> a line-focus ruler, a text-and-spacing panel for the Reader, and an end-of-read recall prompt. Each has real research behind it, needs no server or AI model, and fits Buzzline's existing pieces.</p>
+  <p><b>The honest headline:</b> almost every "read faster" trick has weak or negative independent evidence. The better-supported ideas are the plain ones: help the eye keep its place, let people tune the text, and make them recall what they read.</p>
+  <p><b>Skip:</b> bionic bolding, tinted overlays as a treatment, AI chat about the text, and eye tracking. Details and reasons are in the "Don't build" section.</p>
+</div>
+
+<h2>The top three</h2>
+<p class="sub">Ranked by evidence first, then effort, then how well each fits what Buzzline already is.</p>
+
+<section class="card">
+  <div class="head"><div class="rank">1</div><div>
+    <h3>Line-focus ruler</h3>
+    <p style="margin:0;color:var(--muted)">A band that marks the current line and dims the rest. Move it with the mouse or arrow keys.</p>
+    <div class="tag"><span class="pill mid">Evidence: moderate</span><span class="pill good">Effort: small</span><span class="pill plain">Web pages and both PDF views</span><span class="pill plain">Picked by 2 of 3 research passes</span></div>
+  </div></div>
+  <div class="cols">
+    <div>
+      <h4>Why</h4>
+      <p>The best-supported idea in the presentation-aids area. In a controlled study of digital rulers (Niklaus et al., CHI 2023), 177 adults were analysed, 91 of them with dyslexia. For readers with dyslexia the grey-bar ruler beat no ruler on speed (effect size 0.23), with no loss of comprehension. Readers without dyslexia were fastest with no ruler, but preferred reading with one.</p>
+      <p>Microsoft's Immersive Reader and Helperbird already ship it free, so people expect it as a built-in feature.</p>
+    </div>
+    <div>
+      <h4>How it would work in Buzzline</h4>
+      <ul>
+        <li>A fixed overlay moved by pointer or keys, with a few styles (grey bar, shade, lightbox, underline), since the study found no single style wins.</li>
+        <li>Snapping to real lines can reuse the line-box code already in <code>content.js</code> (<code>textFragments()</code>), about two more days.</li>
+        <li>In the PDF reader's Original view it is easier than on the web: <code>pdf.js</code> already knows every line's position.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><b>Caveats:</b> the speed gain was shown for readers with dyslexia only. The study was online and crowdsourced, with three-question comprehension checks. Whether a ruler and the gradient should be on together is untested; my guess is the gradient should show only inside the band.</div>
+</section>
+
+<section class="card">
+  <div class="head"><div class="rank">2</div><div>
+    <h3>Text-and-spacing panel for the Reader</h3>
+    <p style="margin:0;color:var(--muted)">Font choice, size, letter, word and line spacing, and column width, set by the reader.</p>
+    <div class="tag"><span class="pill mid">Evidence: moderate, mixed</span><span class="pill good">Effort: small to medium</span><span class="pill plain">Reader overlay and PDF Reader view</span></div>
+  </div></div>
+  <div class="cols">
+    <div>
+      <h4>Why</h4>
+      <p>It is the one area backed by several peer-reviewed experiments, and the Reader overlay plainly lacks it: I checked, and it is fixed at 16px with 1.7 line height and no controls. (The PDF reader got size buttons earlier, but not spacing or width.)</p>
+      <p>The evidence supports user control over a fixed preset: a study of personalisation (Sheppard and Joo) found the best setting differs from reader to reader.</p>
+    </div>
+    <div>
+      <h4>What the research says</h4>
+      <ul>
+        <li><b>Spacing:</b> extra-large spacing helped children with dyslexia in one study, replications only partly agree. Wider letter spacing without wider word spacing slowed reading in another.</li>
+        <li><b>Line length:</b> shorter lines helped some readers and not others.</li>
+        <li><b>Dyslexia fonts:</b> no benefit. A 2026 meta-analysis of 15 studies (688 people) found an effect of −0.04.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><b>Design rules from the evidence:</b> keep word spacing at least as large as letter spacing; offer fonts as a choice and never claim one helps; leave the defaults alone.</div>
+</section>
+
+<section class="card">
+  <div class="head"><div class="rank">3</div><div>
+    <h3>End-of-read recall prompt</h3>
+    <p style="margin:0;color:var(--muted)">After Sprint finishes or the Reader closes: "What were the main points?" A free-recall box, then the text revealed.</p>
+    <div class="tag"><span class="pill good">Mechanism: strong evidence</span><span class="pill mid">Effort: medium</span><span class="pill plain">No account, server or AI</span><span class="pill plain">Page text and PDF Reader view</span></div>
+  </div></div>
+  <div class="cols">
+    <div>
+      <h4>Why</h4>
+      <p>Testing yourself beats rereading: across many lab studies the effect is 0.50 (Rowland 2014). For prose, rereading won after five minutes, but after two days and a week the tested group recalled substantially more (Roediger and Karpicke 2006), while the rereaders felt more confident.</p>
+      <p>It also targets a known screen weakness: people reading on screens judge their own understanding less accurately than people reading on paper (Clinton 2019).</p>
+    </div>
+    <div>
+      <h4>How it would work in Buzzline</h4>
+      <ul>
+        <li>Opt-in, one prompt long. Then reveal the passage, or a version with one key word per sentence hidden (no AI needed).</li>
+        <li>Reuses the text Buzzline already extracts for Sprint and the Reader.</li>
+        <li>Leave scheduling and spaced review for later.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><b>Caveats:</b> this is the least proven as a product. In one course experiment about 80% of people offered review questions never touched them, and grades did not differ. No study tests a prompt like this on arbitrary web pages. Measure how many people finish it before building more.</div>
+</section>
+
+<h2>All the options, by evidence and effort</h2>
+<p class="sub">Where each idea sits. Evidence is how strongly independent studies show it helps reading or retention, not how much people like it.</p>
+
+<figure>
+<svg viewBox="0 0 760 470" role="img" aria-label="Chart of ideas by effort (small to large) and evidence strength (negative to strong)">
+  <g font-size="13" fill="currentColor" style="color:var(--muted)">
+    <text x="12" y="82">Strong</text>
+    <text x="12" y="172">Moderate</text>
+    <text x="12" y="262">Weak / none</text>
+    <text x="12" y="352">Negative</text>
+  </g>
+  <g stroke="var(--line)" stroke-width="1">
+    <line x1="92" y1="30" x2="92" y2="395"/><line x1="257" y1="30" x2="257" y2="395"/><line x1="422" y1="30" x2="422" y2="395"/><line x1="587" y1="30" x2="587" y2="395"/><line x1="752" y1="30" x2="752" y2="395"/>
+    <line x1="92" y1="30" x2="752" y2="30"/><line x1="92" y1="120" x2="752" y2="120"/><line x1="92" y1="210" x2="752" y2="210"/><line x1="92" y1="300" x2="752" y2="300"/><line x1="92" y1="395" x2="752" y2="395"/>
+  </g>
+  <g font-size="13" font-weight="600" fill="currentColor" style="color:var(--muted)" text-anchor="middle">
+    <text x="174" y="418">Small (a day or two)</text><text x="339" y="418">Small to medium</text><text x="504" y="418">Medium (about a week)</text><text x="669" y="418">Large</text>
+  </g>
+  <text x="422" y="448" font-size="13" text-anchor="middle" fill="currentColor" style="color:var(--muted)">Effort for Buzzline →</text>
+
+  <!-- strong -->
+  <circle cx="437" cy="75" r="8" fill="#f7c948" stroke="#1a1a1a" stroke-width="2"/><text x="450" y="79" font-size="13" font-weight="700" fill="currentColor">3 · Recall prompt</text>
+  <!-- moderate -->
+  <circle cx="107" cy="150" r="8" fill="#f7c948" stroke="#1a1a1a" stroke-width="2"/><text x="120" y="154" font-size="13" font-weight="700" fill="currentColor">1 · Line ruler</text>
+  <circle cx="107" cy="182" r="6" fill="var(--link)"/><text x="120" y="186" font-size="13" fill="currentColor">Sprint safeguards</text>
+  <circle cx="272" cy="165" r="8" fill="#f7c948" stroke="#1a1a1a" stroke-width="2"/><text x="285" y="169" font-size="13" font-weight="700" fill="currentColor">2 · Spacing panel</text>
+  <circle cx="437" cy="165" r="6" fill="var(--link)"/><text x="450" y="169" font-size="13" fill="currentColor">Pacer highlight</text>
+  <!-- weak or none -->
+  <circle cx="107" cy="255" r="6" fill="var(--link)"/><text x="120" y="259" font-size="13" fill="currentColor">Time left, progress</text>
+  <circle cx="272" cy="240" r="6" fill="var(--link)"/><text x="285" y="244" font-size="13" fill="currentColor">Select-to-define</text>
+  <circle cx="272" cy="272" r="6" fill="var(--link)"/><text x="285" y="276" font-size="13" fill="currentColor">Word read-aloud</text>
+  <circle cx="437" cy="255" r="6" fill="var(--link)"/><text x="450" y="259" font-size="13" fill="currentColor">Streaks and goals</text>
+  <circle cx="602" cy="255" r="6" fill="var(--link)"/><text x="615" y="259" font-size="13" fill="currentColor">Eye tracking</text>
+  <!-- negative -->
+  <circle cx="107" cy="345" r="6" fill="var(--bad)"/><text x="120" y="349" font-size="13" fill="currentColor">Tinted overlays</text>
+  <circle cx="437" cy="345" r="6" fill="var(--bad)"/><text x="450" y="349" font-size="13" fill="currentColor">Bionic bolding</text>
+  <circle cx="602" cy="345" r="6" fill="var(--bad)"/><text x="615" y="349" font-size="13" fill="currentColor">AI chat on text</text>
+</svg>
+<figcaption>Yellow dots are the top three; blue are worth considering; red are best left out. Placement is my reading of the three reports, not a measurement: the recall prompt sits at "strong" because the testing effect is strong, even though no study tests this exact feature.</figcaption>
+</figure>
+
+<h2>The runners-up</h2>
+<p class="sub">Worth building after the top three, in rough order.</p>
+<div class="scroll"><table>
+<thead><tr><th>Idea</th><th>What it is</th><th>Evidence</th><th>Effort</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="n">Moving-highlight pacer</td><td>A highlight moves through the visible page at a set words-per-minute, optionally scrolling with it. Text stays on screen, unlike Sprint. Rivals: SwiftRead "Flow", RSVP Reader "Cruise", Page Pacer.</td><td><span class="pill mid">Moderate, indirect</span></td><td>Medium</td><td>Imposed pace helped in a 110-person training study (Breznitz 2013) and comprehension held up to about 405 wpm in a 2026 study of 46. No study of a pacer product itself. Default near the reader's own speed; do not sell unlimited speed.</td></tr>
+<tr><td class="n">Sprint safeguards</td><td>A "back one sentence" key, a faded context peek while paused, a longer pause at sentence ends.</td><td><span class="pill mid">Mechanism strong, design untested</span></td><td>Small</td><td>RSVP removes the eye's look-backs, and comprehension falls (Schotter 2014). These keys give some of that back. My inference, not a tested design.</td></tr>
+<tr><td class="n">Word-level read-aloud</td><td>Highlight each word as it is spoken, with a voice and speed picker, also in the PDF reader.</td><td><span class="pill weak">Weak</span></td><td>Small to medium</td><td>Reading while listening helps little overall and not at all when you set the pace (effect 0.06). Chrome's desktop Google voices do not report word boundaries, so build sentence-level first.</td></tr>
+<tr><td class="n">Time left and progress</td><td>"About N min left" and a thin progress bar, using the reader's own Sprint speed.</td><td><span class="pill weak">None found</span></td><td>Small</td><td>Cheap and liked, not proven. Adults average about 238 words per minute on non-fiction, a fair default.</td></tr>
+<tr><td class="n">Select-to-define</td><td>A dictionary lookup on selected text. Start with a plain dictionary, not an AI.</td><td><span class="pill weak">Strong for second-language learners; none for native adults</span></td><td>Small to medium</td><td>Every major reader has it and Buzzline has none. Which free dictionary source to use was not researched.</td></tr>
+<tr><td class="n">Streaks and goals</td><td>A daily reading goal and streak, as in Apple Books.</td><td><span class="pill weak">Raises activity; none for reading</span></td><td>Medium</td><td>Needs honest "actively reading" time (a tab left open would cheat it).</td></tr>
+<tr><td class="n">Export for e-ink</td><td>Send the extracted text to a Kindle or Kobo as an EPUB.</td><td><span class="pill plain">Not needed for transport</span></td><td>Medium</td><td>Gradients would not survive grayscale e-ink; a plain export is realistic. Whether Buzzline runs on Boox browsers is untested.</td></tr>
+<tr><td class="n">Per-site "hide this"</td><td>Hide chosen page elements on a site, like Safari's Distraction Control.</td><td><span class="pill weak">None found</span></td><td>Medium</td><td>Breaks easily on single-page apps. The Reader overlay already gives a clean view.</td></tr>
+</tbody></table></div>
+
+<h2>Don't build</h2>
+<p class="sub">Popular, but the evidence or the economics say no.</p>
+<div class="nots">
+  <div class="not"><h3>Bionic bolding</h3><p>Independent studies find no speed or comprehension gain: at least five null or negative results, including a 90-person registered report in 2026. The only positive result is a 12-person pilot hosted by the vendor. The vendor calls the method patented, which someone should check before any first-half-bold feature. Technically it also cannot be done with the highlight API Buzzline uses.</p></div>
+  <div class="not"><h3>Tinted overlays as a treatment</h3><p>A 2016 review of 51 items concluded use "cannot be endorsed" and that benefits look like placebo. Fine as a comfort setting if ever offered; never as therapy.</p></div>
+  <div class="not"><h3>AI chat and summaries</h3><p>A 2025 study of 10,462 people found learning from AI summaries was shallower. Kindle, Readwise and Chrome already ship this. It would add cost, keys and privacy review. The opposite idea, making the reader produce something, is item 3.</p></div>
+  <div class="not"><h3>Eye tracking</h3><p>Webcam gaze is far coarser than a line of text, needs camera permission and calibration, and the main library's maintenance ended in February 2026 (GPLv3 licence). Revisit only if people ask after the ruler exists.</p></div>
+</div>
+
+<h2>What this says about what Buzzline already has</h2>
+<p class="sub">Worth knowing, because the same research covers the existing features.</p>
+<div class="own">
+  <div><h3>The line gradient</h3><p>The only peer-reviewed study of this kind of gradient (Koornneef and Kraal 2022) tested children aged 6 to 9 and found mixed results, including slower reading on well-spaced layouts. In adults, bolding the first word of each line cut return-sweep errors but not reading time (Slattery and Vasilev 2019). BeeLine's positive figures are its own. Suggestion: describe the gradient as a preference, not as "reads faster".</p></div>
+  <div><h3>Sprint (one word at a time)</h3><p>Studies of this style (Schotter 2014, and others on Spritz) find comprehension drops, especially above about 400 words per minute, because it removes look-backs. Buzzline's Sprint matches the leading products' features, so there is nothing to add except the safeguards above, and an honest note that high speeds are for skimming.</p></div>
+  <div><h3>Read aloud</h3><p>Already there at paragraph level. The research gives little reason to prioritise more: audio helps little when you control the pace. It may matter more for Sprint, which is machine-paced (my inference).</p></div>
+</div>
+
+<h2>What I could not verify</h2>
+<ul class="plain">
+  <li>Several publisher pages blocked automated access (Wiley, ScienceDirect, ACM, SAGE, Mozilla, others). For those the reports used abstracts, PubMed or Crossref records, PDF copies or write-ups, and mark each one.</li>
+  <li>No independent study of any pacer product, or of a recall prompt on ordinary web pages, was found.</li>
+  <li>Prices for Matter, Raindrop Pro, Cold Turkey and Voice Dream come from third-party sites. User counts and ratings were as shown on 16 November 2026 and change.</li>
+  <li>Patent and trademark claims (Bionic Reading, BeeLine, Spritz) come from vendor pages; I did not read the patents.</li>
+  <li>Whether Chrome's Google voices have gained word-boundary events since mid-2024 is untested.</li>
+  <li>Whether Buzzline works on Boox e-ink browsers, or how its gradient looks in grayscale, is untested.</li>
+</ul>
+
+<footer>
+  <p>Full reports with every source link and a "could not verify" list:
+  <a href="reading-tools-focus.md">presentation aids and pacing</a> ·
+  <a href="reading-tools-access.md">typography and accessibility</a> ·
+  <a href="reading-tools-apps.md">apps, devices and habits</a>.
+  Earlier colour research: <a href="colour-schemes.md">colour schemes</a>.</p>
+</footer>
+</main>
+</body>
+</html>
